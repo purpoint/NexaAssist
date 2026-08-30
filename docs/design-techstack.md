@@ -14,10 +14,13 @@
 | Frontend framework | React | Component model and ecosystem depth. |
 | Frontend build | Vite | Fast dev server, first-class TS support, minimal config. |
 | Backend tests | pytest + httpx | Standard; httpx drives the ASGI app in-process without a live server. |
+| LLM provider | Groq | Single provider to start; access is behind a protocol so a second one is an adapter, not a refactor. |
+| LLM SDK | `groq` (official) | Typed exceptions and transport-level retry/timeout. It has no `parse()` helper, so structured output is assembled in the provider. |
+| Default model | `openai/gpt-oss-120b` | One of the Groq models supporting strict structured output. Configurable via `LLM_MODEL`; nothing in the code hardcodes it. |
 
 ## Not yet decided
 
-- LLM / agent framework
+- Agent / orchestration framework
 - Vector store and embedding model
 - Relational database and migration tool
 - Cache and background job runner

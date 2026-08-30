@@ -3,7 +3,7 @@
 Each milestone is a self-contained change set: code, docs, and tests together.
 Scope is intentionally narrow so nothing is built speculatively.
 
-## M0 — Repository foundation ✅
+## M0 — Repository Foundation ✅
 
 - Directory structure for backend, frontend, docs, and tests
 - `.gitignore`, `.env.example`, root `README.md`
@@ -12,7 +12,7 @@ Scope is intentionally narrow so nothing is built speculatively.
 - React + TypeScript project scaffolding (structure and config only, no UI)
 - Backend test covering the health endpoint
 
-## M1 — Versioned API foundation ✅
+## M1 — FastAPI Foundation ✅
 
 - [x] API versioning: v1 router tree mounted at `/api/v1`
 - [x] Health endpoint moved to `app/api/v1/health.py`
@@ -20,46 +20,121 @@ Scope is intentionally narrow so nothing is built speculatively.
 - [x] `AppError` foundation and consistent `ErrorResponse` error bodies
 - [x] Standard-library logging configuration
 - [x] Tests for v1 health, the legacy alias, app creation, and 404 handling
-- [ ] First domain resource end to end _(deferred to M2 — needs persistence)_
 
-## M2 — Frontend shell
+## M2 — LLM Foundation
 
-- [ ] Remove the deprecated `/api/health` alias and `ENABLE_LEGACY_HEALTH_ROUTE`
-- [ ] Install frontend dependencies
-- [ ] Application shell and routing
-- [ ] Typed API client wired to the backend
+Delivered in three checkpoints.
 
-## M3 — Persistence
+- [x] LLM configuration on `Settings`, and the provider abstraction
+      (`LLMProvider` protocol, `LLMConfig`, `LLMPrompt`, `StructuredCompletion`)
+- [x] Groq provider foundation and a deterministic `StaticLLMProvider`
+- [ ] Structured intent analysis: `IntentAnalysis`, `IntentService`, and
+      `POST /api/v1/intent/analyze`
+- [ ] Hardened LLM error taxonomy, bounded repair retry, outer request
+      deadline, and secret redaction in logging
 
-- [ ] Database selection and connection layer
-- [ ] Migrations
+## M3 — PostgreSQL + Alembic
+
+- [ ] Database connection layer
+- [ ] Alembic migrations
 - [ ] Persistence models
 
-## M4 — Agent layer
+## M4 — Core Business Domain
 
-- [ ] Model provider integration
-- [ ] Agent loop and tool interface
-- [ ] Prompts documented in `prompt.md`
+- [ ] First domain resource end to end _(carried over from M1, needed persistence)_
+- [ ] Domain models and service layer
 
-## M5 — Knowledge / retrieval
+## M5 — RAG + pgvector
 
 - [ ] Document ingestion
-- [ ] Vector store and retrieval
+- [ ] pgvector storage and retrieval
 - [ ] Grounded answers with citations
 
-## M6 — Workflow automation
+## M6 — Tool System
+
+- [ ] Tool interface and registry
+- [ ] Tool execution and result handling
+
+## M7 — Agent Core
+
+- [ ] Agent loop over the tool system
+- [ ] Agent state and step accounting
+
+## M8 — Intent Router
+
+- [ ] Route classified intents to handlers
+- [ ] Fallback and ambiguity handling
+
+## M9 — Specialized Workflows
 
 - [ ] Workflow definition format
-- [ ] Execution engine
-- [ ] Human escalation and handoff
+- [ ] Workflow execution
 
-## M7 — Authentication & multi-tenancy
+## M10 — Deterministic Policy Engine
+
+- [ ] Policy rules evaluated outside the model
+- [ ] Policy precedence over model output
+
+## M11 — Human-in-the-Loop
+
+- [ ] Escalation criteria
+- [ ] Handoff and human review queue
+
+## M12 — Conversation Memory
+
+- [ ] Conversation state and history
+- [ ] Context window management
+
+## M13 — Redis + Background Jobs
+
+- [ ] Redis integration
+- [ ] Background job execution
+
+## M14 — WebSockets + Realtime
+
+- [ ] WebSocket transport
+- [ ] Streaming responses
+
+## M15 — Evaluation Framework
+
+- [ ] Prompt and workflow evaluation harness
+- [ ] Regression suite for model-facing changes
+
+## M16 — Observability + Cost Tracking
+
+- [ ] Structured tracing
+- [ ] Token and cost accounting
+
+## M17 — Security Hardening
 
 - [ ] Authentication
 - [ ] Authorization and tenant isolation
 
-## M8 — Production readiness
+## M18 — Production Frontend
+
+- [ ] Remove the deprecated `/api/health` alias and `ENABLE_LEGACY_HEALTH_ROUTE`
+      _(originally scheduled for M2; retargeted here, the first milestone with a
+      real API consumer)_
+- [ ] Install frontend dependencies
+- [ ] Application shell and routing
+- [ ] Typed API client wired to the backend
+
+## M19 — Docker / Production-like Environment
+
+- [ ] Container images
+- [ ] Local production-like compose environment
+
+## M20 — CI/CD + Deployment
 
 - [ ] CI pipeline
-- [ ] Observability
 - [ ] Deployment
+
+## M21 — Documentation
+
+- [ ] Architecture and operations documentation
+- [ ] API reference
+
+## M22 — Resume + Interview Preparation
+
+- [ ] Project write-up
+- [ ] Architecture walkthrough

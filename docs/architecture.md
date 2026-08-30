@@ -34,7 +34,9 @@ identical, and a test asserts that they stay identical.
   struck-through in `/docs`.
 - It is gated by `ENABLE_LEGACY_HEALTH_ROUTE` (default `true`). Set it to
   `false` to confirm nothing still depends on it.
-- **It is removed in M2**, along with the setting and its tests.
+- **It is removed in M18**, along with the setting and its tests. (M1 named
+  M2 for this; M2 became the LLM foundation, so removal moved to the first
+  milestone with a real API consumer rather than being dropped silently.)
 
 ## Error handling
 
@@ -76,10 +78,86 @@ one format and level. Level comes from `LOG_LEVEL`.
 | `app.core.config` | Settings loaded from environment, validated once at startup. |
 | `app.core.exceptions` | `AppError` hierarchy and the handlers that render it. |
 | `app.core.logging` | Process-wide logging configuration. |
+| `app.llm` | Language-model access: the provider contract and its implementations. |
 | `app.api.v1` | Version 1 HTTP endpoints. One module per resource. |
 | `app.schemas` | Request/response models — the API contract. `common.py` holds shapes used by more than one endpoint. |
 | `app.models` | Persistence models. Empty until a database is introduced. |
 | `app.services` | Domain logic and orchestration. Empty until workflows are introduced. |
+
+## Language-model layer
+
+`app/llm/` is the only part of the codebase that knows a model vendor exists.
+
+```
+Application  ->  LLMProvider (protocol)  ->  GroqProvider  ->  Groq API
+
+llm/
+├── base.py       the vendor-neutral contract: LLMProvider, LLMConfig,
+│                 LLMPrompt, StructuredCompletion
+├── errors.py     LLM failures as AppError subclasses
+├── factory.py    name -> implementation registry, and the DI entry point
+├── prompts.py    prompt text, versioned as named constants
+└── providers/    concrete implementations (groq, static)
+```
+
+Callers depend on `base` only. They receive a provider through
+`Depends(get_llm_provider)`, never by importing a provider module, so swapping
+or adding a backend touches no call site.
+
+Design rules:
+
+- **`LLMProvider` is a `Protocol`, not a base class.** Implementations neither
+  import nor inherit from it, so a test double or a future third-party adapter
+  conforms structurally.
+- **Providers are stateless and configured per call.** No conversation memory
+  lives inside a provider; that belongs to an orchestration layer.
+- **`LLMConfig` is narrow.** A provider never receives the application
+  `Settings`, so provider tests construct a config directly instead of
+  populating an environment.
+- **Two implementations from the start.** `StaticLLMProvider` is deterministic
+  and offline — it runs the app without credentials and keeps the abstraction
+  honest, since a single-implementation interface has not been shown to be an
+  interface.
+- **`app.core` never imports `app.llm`.** The projection from `Settings` to
+  `LLMConfig` lives in `llm/factory.py` so the layering runs one way.
+
+### Structured output
+
+Groq exposes structured output the OpenAI-compatible way: the request carries a
+JSON Schema in `response_format`, and the reply is a JSON string that the
+provider validates against the caller's Pydantic model. The SDK ships no
+`parse()` helper, so `GroqProvider` assembles this itself.
+
+`strict: true` (constrained decoding) is used, which Groq requires be paired
+with a schema where every object sets `additionalProperties: false` and lists
+all of its properties in `required`. Pydantic emits neither, so
+`strict_json_schema()` adds both at every depth rather than having each schema
+hand-write them.
+
+Structured output is **model-dependent**. As of writing, strict mode is
+supported on `openai/gpt-oss-20b`, `openai/gpt-oss-120b`, and
+`qwen/qwen3.8-27b`; the default `LLM_MODEL` is `openai/gpt-oss-120b`. Models
+outside that set — `llama-3.3-70b-versatile`, for instance — support only JSON
+object mode and will not honour a schema. Changing `LLM_MODEL` means checking
+that list first.
+
+`LLM_TEMPERATURE` is optional and provider-agnostic. It defaults to unset and
+is omitted from the request entirely when unset.
+
+### Credentials
+
+The API key is read from `GROQ_API_KEY` — the same variable the Groq SDK reads,
+so an already-exported key needs no `.env` entry. It is typed `SecretStr`, so
+it renders as `**********` in any repr, and it is never placed in a log line, an
+error body, or `.env.example`. Leaving it blank means *unset*, which lets the
+SDK resolve it from the environment.
+
+### Error handling (current state)
+
+Every provider failure currently surfaces as a single `LLMError` (500). That is
+deliberate for this checkpoint and honest about how little the layer
+distinguishes so far. Classifying timeouts, rate limits, provider outages, and
+misconfiguration — each with its own status code — is the remaining M2 step.
 
 ## Planned components
 

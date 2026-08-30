@@ -65,7 +65,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     if settings.enable_legacy_health_route:
         # Pre-v1 alias kept so existing callers of /api/health do not break.
-        # Marked deprecated in the OpenAPI schema; scheduled for removal in M2.
+        # Marked deprecated in the OpenAPI schema; scheduled for removal in M18.
         app.include_router(
             v1_health.router,
             prefix=settings.api_prefix,
