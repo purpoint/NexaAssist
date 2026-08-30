@@ -28,7 +28,7 @@ Delivered in three checkpoints.
 - [x] LLM configuration on `Settings`, and the provider abstraction
       (`LLMProvider` protocol, `LLMConfig`, `LLMPrompt`, `StructuredCompletion`)
 - [x] Groq provider foundation and a deterministic `StaticLLMProvider`
-- [ ] Structured intent analysis: `IntentAnalysis`, `IntentService`, and
+- [x] Structured intent analysis: `IntentAnalysis`, `IntentService`, and
       `POST /api/v1/intent/analyze`
 - [ ] Hardened LLM error taxonomy, bounded repair retry, outer request
       deadline, and secret redaction in logging

@@ -12,12 +12,23 @@ from app.llm.base import LLMConfig, LLMProvider
 from app.llm.errors import LLMError
 from app.llm.providers.groq_provider import GroqProvider
 from app.llm.providers.static_provider import StaticLLMProvider
+from app.schemas.intent import STATIC_EXAMPLE, IntentAnalysis
 
 ProviderBuilder = Callable[[LLMConfig], LLMProvider]
 
+
+def _build_static(config: LLMConfig) -> LLMProvider:
+    """Wire the static provider's canned catalogue.
+
+    The composition root supplies the domain responses, so
+    ``static_provider.py`` itself stays free of domain vocabulary.
+    """
+    return StaticLLMProvider(config, canned={IntentAnalysis: STATIC_EXAMPLE})
+
+
 _PROVIDERS: dict[str, ProviderBuilder] = {
     GroqProvider.name: GroqProvider,
-    StaticLLMProvider.name: StaticLLMProvider,
+    StaticLLMProvider.name: _build_static,
 }
 
 PROVIDER_NAMES: tuple[str, ...] = tuple(sorted(_PROVIDERS))

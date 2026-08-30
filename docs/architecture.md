@@ -7,8 +7,9 @@
 
 ```
 Client (React + TS)  ──HTTP──▶  FastAPI service
-                                  ├── GET /api/v1/health
-                                  └── GET /api/health   (deprecated alias)
+                                  ├── GET  /api/v1/health
+                                  ├── POST /api/v1/intent/analyze
+                                  └── GET  /api/health   (deprecated alias)
 ```
 
 That is the entire runtime today: one HTTP service exposing a health check, and
@@ -158,6 +159,46 @@ Every provider failure currently surfaces as a single `LLMError` (500). That is
 deliberate for this checkpoint and honest about how little the layer
 distinguishes so far. Classifying timeouts, rate limits, provider outages, and
 misconfiguration — each with its own status code — is the remaining M2 step.
+
+## Intent analysis
+
+The first capability that actually calls a model. The chain is one-way, and
+each link depends only on the one below it:
+
+```
+POST /api/v1/intent/analyze
+  └─ api/v1/intent.py      validate request, call service, return  (no logic)
+      └─ IntentService     compose prompt + schema, unwrap result
+          └─ LLMProvider   protocol -- the service knows nothing else
+              └─ GroqProvider     the only module importing the SDK
+                  └─ Groq structured JSON output
+                      └─ IntentAnalysis (validated by Pydantic)
+                          └─ API response
+```
+
+`IntentAnalysis` is deliberately one model doing two jobs: it is the JSON
+Schema sent to the provider *and* the HTTP response model, so the wire contract
+and the model contract cannot drift apart.
+
+The category set is closed (`billing`, `technical_support`, `account`,
+`product_question`, `complaint`, `other`) so that M8's router can dispatch on a
+lookup rather than fuzzy matching. `other` is mandatory: without an escape
+hatch the model is forced to miscategorise.
+
+`confidence` is the model's self-report, **not** a calibrated probability --
+see `docs/prompt.md`.
+
+Nothing here decides what the business should *do* with a classification.
+Urgency, escalation, prioritisation, and human review belong to M10 and M11,
+and are absent from both the schema and the prompt on purpose.
+
+### Running it without a Groq key
+
+`LLM_PROVIDER=static` serves this endpoint from `StaticLLMProvider`. The
+factory -- the composition root -- supplies the canned catalogue
+(`IntentAnalysis -> STATIC_EXAMPLE`), so the provider module itself stays free
+of domain vocabulary. The canned answer is `other` at zero confidence, so it is
+obvious no model was involved.
 
 ## Planned components
 
