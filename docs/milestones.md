@@ -12,14 +12,19 @@ Scope is intentionally narrow so nothing is built speculatively.
 - React + TypeScript project scaffolding (structure and config only, no UI)
 - Backend test covering the health endpoint
 
-## M1 — Core API shape
+## M1 — Versioned API foundation ✅
 
-- [ ] Request/response schema conventions
-- [ ] Error handling and structured logging
-- [ ] First domain resource end to end
+- [x] API versioning: v1 router tree mounted at `/api/v1`
+- [x] Health endpoint moved to `app/api/v1/health.py`
+- [x] `/api/health` preserved as a deprecated, config-gated alias
+- [x] `AppError` foundation and consistent `ErrorResponse` error bodies
+- [x] Standard-library logging configuration
+- [x] Tests for v1 health, the legacy alias, app creation, and 404 handling
+- [ ] First domain resource end to end _(deferred to M2 — needs persistence)_
 
 ## M2 — Frontend shell
 
+- [ ] Remove the deprecated `/api/health` alias and `ENABLE_LEGACY_HEALTH_ROUTE`
 - [ ] Install frontend dependencies
 - [ ] Application shell and routing
 - [ ] Typed API client wired to the backend

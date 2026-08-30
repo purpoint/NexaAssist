@@ -28,9 +28,20 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000)
     api_prefix: str = Field(default="/api")
 
+    # Pre-v1 alias for the health endpoint. Deprecated; see docs/architecture.md.
+    enable_legacy_health_route: bool = Field(default=True)
+
     log_level: str = Field(default="INFO")
 
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+
+    @property
+    def api_v1_prefix(self) -> str:
+        """Path prefix for version 1 routes, e.g. ``/api/v1``.
+
+        Derived here so no other module hardcodes the version segment.
+        """
+        return f"{self.api_prefix.rstrip('/')}/v1"
 
     @field_validator("cors_origins", mode="before")
     @classmethod

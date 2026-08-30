@@ -3,10 +3,16 @@
 Agentic Customer Support & Workflow Automation Platform.
 
 > **Status: foundation only.** This repository currently contains the project
-> skeleton — directory structure, configuration contracts, and a single health
-> endpoint. No agents, retrieval, database, cache, authentication, or business
-> workflows are implemented yet. See [`docs/milestones.md`](docs/milestones.md)
-> for what comes next.
+> skeleton — a versioned API surface, configuration, logging, error handling,
+> and a single health endpoint. No agents, retrieval, database, cache,
+> authentication, or business workflows are implemented yet. See
+> [`docs/milestones.md`](docs/milestones.md) for what comes next.
+
+## API
+
+Routes are versioned: version 1 is served under `/api/v1`. The pre-v1
+`/api/health` alias still responds but is deprecated — see
+[`docs/architecture.md`](docs/architecture.md#api-versioning).
 
 ## Repository layout
 
@@ -48,7 +54,7 @@ uvicorn app.main:app --reload --app-dir backend
 Then check the health endpoint:
 
 ```bash
-curl http://127.0.0.1:8000/api/health
+curl http://127.0.0.1:8000/api/v1/health
 ```
 
 Interactive API docs are served at `http://127.0.0.1:8000/docs`.
