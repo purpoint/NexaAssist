@@ -83,6 +83,11 @@ class Settings(BaseSettings):
     embedding_provider: Literal["fastembed", "hashing"] = Field(default="fastembed")
     # How many chunks a retrieval returns before the answer is composed.
     retrieval_top_k: int = Field(default=4, ge=1, le=20)
+
+    # What one agent run may spend. Two limits because a loop can burn steps
+    # without calling a tool, and can call tools more often than it takes steps.
+    agent_max_steps: int = Field(default=6, ge=1, le=50)
+    agent_max_tool_calls: int = Field(default=8, ge=0, le=100)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property

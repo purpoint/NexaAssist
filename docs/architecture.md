@@ -461,6 +461,27 @@ caller ─▶ ToolExecutor ─▶ ToolRegistry ─▶ Tool ─▶ Service ─▶
 
 M6 adds no HTTP endpoints; the loop that chooses tools is M7.
 
+### Agent core (M7)
+
+```
+AgentLoop.run(question)
+  ├─ decide   LLMProvider -> AgentDecision (call a tool, or answer)
+  ├─ act      ToolExecutor -> ToolResult   (never raises)
+  ├─ observe  result folded into the next prompt
+  └─ repeat until an answer, or the budget stops it
+```
+
+- **Two budgets, not one.** A loop can burn steps without calling a tool, and
+  can call tools more often than it takes steps; bounding only one leaves the
+  other unbounded.
+- **Every failure ends with an answer.** A bad tool name, invalid parameters, a
+  timeout, or a provider outage produces a reply, not a traceback — a support
+  request that dies with a stack trace helps nobody.
+- **Observations are fed back.** Without that the loop would call the same tool
+  forever.
+- **The transcript excludes tool output.** It may be logged or returned, and
+  outputs carry customer content; only names, outcomes, and timings appear.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

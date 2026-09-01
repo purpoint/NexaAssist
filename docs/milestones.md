@@ -85,10 +85,18 @@ Delivered in three checkpoints.
 No HTTP surface: M6 specifies none, and the agent loop that drives these
 belongs to M7.
 
-## M7 — Agent Core
+## M7 — Agent Core ✅
 
-- [ ] Agent loop over the tool system
-- [ ] Agent state and step accounting
+Delivered in three checkpoints.
+
+- [x] Agent state and step accounting: every step recorded, with a two-part
+      budget (steps and tool calls) so neither can run away
+- [x] Agent loop over the tool system: decide, act, observe, repeat — every
+      failure ends the run with an answer rather than an exception
+- [x] Composition over the M6 domain tools, with the budget read from settings
+
+No HTTP surface: the roadmap specifies none, and choosing *which* agent handles
+a request is routing, which is M8.
 
 ## M8 — Intent Router
 
