@@ -510,6 +510,33 @@ IntentAnalysis ─▶ IntentRouter.decide ─▶ handler
 - **`decide()` is separate from `route()`**, so the choice can be inspected and
   tested without running a handler.
 
+### Workflows (M9)
+
+```
+Workflow (data)        WorkflowRunner            ToolExecutor
+  inputs: [...]   ──▶   resolve references  ──▶   validated, timed call
+  steps:  [...]         record each step          ToolResult (never raises)
+```
+
+- **Definitions are inert data.** They can be read, validated, and compared
+  without running anything; everything variable is a reference resolved at
+  execution time rather than code embedded in the definition.
+- **Inputs are declared.** A reference to an input is then validated exactly
+  like a reference to a step, and a workflow documents what it needs.
+- **References are whole-value only.** Interpolating a structured result into a
+  larger string would force a stringification whose format nothing has agreed
+  on.
+- **Forward and self references are rejected at construction.** A workflow is a
+  sequence, not a graph; a cycle could never terminate.
+- **Optional steps may fail without ending the run**, but a later step that
+  references a skipped one fails on its own parameters — a recorded outcome,
+  never a crash.
+- **The run summary excludes step outputs**, which are returned separately, so
+  the object that is safe to log and the object holding customer data are not
+  the same one.
+- **Workflows and the agent share one tool registry**, so they cannot disagree
+  about what a tool does.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

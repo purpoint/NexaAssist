@@ -110,10 +110,19 @@ Delivered in three checkpoints.
       documented answers, the M7 agent for account-state questions, and a
       fallback that declines to guess
 
-## M9 — Specialized Workflows
+## M9 — Specialized Workflows ✅
 
-- [ ] Workflow definition format
-- [ ] Workflow execution
+Delivered in three checkpoints.
+
+- [x] Workflow definition format: declarative, immutable, validated — declared
+      inputs, ordered steps, and whole-value references to earlier output, with
+      forward and self references rejected at construction
+- [x] Workflow execution over the M6 executor, so every step inherits validated
+      parameters, bounded time, and failures returned rather than raised
+- [x] A library of concrete workflows over the same tools the agent uses
+
+Workflows are the deterministic counterpart to the M7 agent, for cases where
+the right steps are already known — not a replacement for it.
 
 ## M10 — Deterministic Policy Engine
 
