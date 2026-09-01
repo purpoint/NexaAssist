@@ -14,6 +14,11 @@ app/
 ├── api/v1/
 │   ├── router.py       aggregates v1 routes; mounted once by main.py
 │   └── health.py       GET /health
+├── db/
+│   ├── base.py         DeclarativeBase, naming convention, TimestampMixin
+│   ├── engine.py       async engine + pool lifecycle
+│   ├── session.py      request-scoped AsyncSession dependency
+│   └── errors.py       database failures as AppError subclasses
 ├── llm/
 │   ├── base.py         vendor-neutral contract: LLMProvider, LLMConfig, ...
 │   ├── errors.py       LLM failures as AppError subclasses
@@ -35,6 +40,19 @@ uvicorn app.main:app --reload --app-dir backend
 
 - Health: `GET /api/v1/health`
 - Docs: `/docs`
+
+### Database
+
+```bash
+createdb nexaassist
+```
+
+Then set `DATABASE_URL` in `.env`. The async driver is required —
+`postgresql://` is rejected at startup. Leaving it unset runs the service
+without a database.
+
+The schema is owned by migrations; nothing calls `create_all()` and nothing
+migrates automatically at startup.
 
 ### Without provider credentials
 
@@ -60,3 +78,6 @@ makes no network calls and needs no API key. Otherwise export `GROQ_API_KEY`
 - `app.core` must not import `app.llm`; the dependency runs one way.
 - Never log prompts, model responses, or credentials. Log metadata only:
   provider, model, latency, token usage, stop reason.
+- Reach the database through `Depends(get_db_session)`. Sessions do not commit
+  implicitly — a caller that writes commits explicitly.
+- Never call `Base.metadata.create_all()`. The schema belongs to migrations.

@@ -21,6 +21,7 @@ from app.api.v1.router import router as v1_router
 from app.core.config import Settings, get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import configure_logging, get_logger
+from app.db.engine import dispose_engine
 
 logger = get_logger(__name__)
 
@@ -29,13 +30,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and configure the FastAPI application."""
     settings = settings or get_settings()
 
-    # The configured key is registered as a literal to scrub, so it cannot
+    # Configured secrets are registered as literals to scrub, so they cannot
     # surface through a third-party traceback or SDK debug logging.
-    secrets = (
-        [settings.llm_api_key.get_secret_value()]
-        if settings.llm_api_key is not None
-        else []
-    )
+    secrets = [
+        secret.get_secret_value()
+        for secret in (settings.llm_api_key, settings.database_url)
+        if secret is not None
+    ]
     configure_logging(settings.log_level, secrets)
 
     @asynccontextmanager
@@ -48,6 +49,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             settings.api_v1_prefix,
         )
         yield
+        # The engine is built lazily, so this is a no-op when nothing ever
+        # opened a connection. Migrations are never run from here: schema
+        # changes are an explicit operator action.
+        await dispose_engine()
         logger.info("%s shutting down", settings.app_name)
 
     app = FastAPI(

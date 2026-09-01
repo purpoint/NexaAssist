@@ -1,0 +1,59 @@
+"""The declarative foundation for every persistence model.
+
+Deliberately dependency-free within the app: it imports nothing from
+``app.core`` or ``app.db``, so importing a model can never drag in
+configuration or a live connection.
+"""
+
+from datetime import datetime
+
+from sqlalchemy import DateTime, MetaData, func
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+NAMING_CONVENTION: dict[str, str] = {
+    "ix": "ix_%(column_0_label)s",
+    "uq": "uq_%(table_name)s_%(column_0_name)s",
+    "ck": "ck_%(table_name)s_%(constraint_name)s",
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referrer_table_name)s",
+    "pk": "pk_%(table_name)s",
+}
+"""Deterministic names for indexes and constraints.
+
+This is not cosmetic, and settling it before the first table exists is the
+whole point. PostgreSQL invents constraint names when none is given, and
+Alembic cannot reliably emit ``DROP CONSTRAINT`` for a name it does not know --
+so a migration that alters or removes a constraint fails, or silently differs
+between databases. Adopting the convention retrospectively would mean a rename
+migration for every table already shipped.
+"""
+
+
+class Base(DeclarativeBase):
+    """Declarative base shared by every model.
+
+    ``app.models`` imports each model so that ``Base.metadata`` is complete by
+    the time Alembic inspects it.
+    """
+
+    metadata = MetaData(naming_convention=NAMING_CONVENTION)
+
+
+class TimestampMixin:
+    """Adds ``created_at`` / ``updated_at``, maintained by the database.
+
+    The defaults are ``server_default`` rather than Python-side values, so rows
+    written outside the application -- a migration, a manual fix, a bulk load --
+    are stamped correctly too. Both columns are timezone-aware; naive
+    timestamps are a durable source of bugs once anything runs outside one
+    region.
+    """
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )

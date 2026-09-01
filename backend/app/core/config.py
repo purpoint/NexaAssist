@@ -67,6 +67,15 @@ class Settings(BaseSettings):
     # timeout, because retry backoff sleeps count against it -- a real call
     # was observed taking 34.8s after a server-directed retry-after.
     llm_total_timeout_seconds: float = Field(default=90.0, gt=0)
+
+    # May carry a password in any non-local environment, so it is a secret
+    # and is registered with the log redactor. Unset means "no database":
+    # the service still runs for work that does not need one.
+    database_url: SecretStr | None = Field(default=None)
+    db_pool_size: int = Field(default=5, ge=1)
+    db_max_overflow: int = Field(default=10, ge=0)
+    # Echoes SQL *and* bound parameters, which can include customer data.
+    db_echo: bool = Field(default=False)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property
@@ -85,7 +94,7 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("llm_api_key", "llm_temperature", mode="before")
+    @field_validator("llm_api_key", "llm_temperature", "database_url", mode="before")
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         """Treat a blank environment value as unset.
@@ -97,6 +106,25 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _require_async_database_driver(self) -> Self:
+        """Reject a synchronous driver URL before it reaches the engine.
+
+        ``postgresql://`` against an async engine fails at connect time with a
+        message about a missing greenlet, which points nowhere useful. Only the
+        scheme is quoted back -- the rest of the URL may hold a password.
+        """
+        if self.database_url is None:
+            return self
+        url = self.database_url.get_secret_value()
+        scheme = url.split("://", 1)[0]
+        if scheme != "postgresql+asyncpg":
+            raise ValueError(
+                "DATABASE_URL must use the postgresql+asyncpg driver, "
+                f"got {scheme!r}."
+            )
+        return self
 
     @model_validator(mode="after")
     def _total_timeout_covers_one_attempt(self) -> Self:

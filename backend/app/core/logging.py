@@ -22,6 +22,12 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # traceback, or SDK debug output.
     (re.compile(r"gsk_[A-Za-z0-9_\-]{8,}"), REDACTED),
     (re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._\-]{8,}"), f"Bearer {REDACTED}"),
+    # scheme://user:password@host -- a database URL leaks differently from an
+    # API key, and SQLAlchemy is not the only thing that might print one.
+    (
+        re.compile(r"(?i)\b([a-z][a-z0-9+.\-]*://[^\s:/@]+):([^\s@/]+)@"),
+        rf"\1:{REDACTED}@",
+    ),
     # No leading \b: it would fail between the underscore and the name in
     # GROQ_API_KEY. An identifier prefix is consumed instead, so GROQ_API_KEY,
     # x-api-key, and a bare authorization all match.

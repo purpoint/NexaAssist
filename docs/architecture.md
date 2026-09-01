@@ -80,6 +80,7 @@ one format and level. Level comes from `LOG_LEVEL`.
 | `app.core.exceptions` | `AppError` hierarchy and the handlers that render it. |
 | `app.core.logging` | Process-wide logging configuration. |
 | `app.llm` | Language-model access: the provider contract and its implementations. |
+| `app.db` | Connection pool, session lifecycle, and the declarative foundation. |
 | `app.api.v1` | Version 1 HTTP endpoints. One module per resource. |
 | `app.schemas` | Request/response models — the API contract. `common.py` holds shapes used by more than one endpoint. |
 | `app.models` | Persistence models. Empty until a database is introduced. |
@@ -257,6 +258,49 @@ factory -- the composition root -- supplies the canned catalogue
 (`IntentAnalysis -> STATIC_EXAMPLE`), so the provider module itself stays free
 of domain vocabulary. The canned answer is `other` at zero confidence, so it is
 obvious no model was involved.
+
+## Persistence
+
+PostgreSQL, reached through SQLAlchemy 2.0's async layer over `asyncpg`.
+
+```
+Request
+  └─ Depends(get_db_session) ──▶ AsyncSession (one per request)
+                                   └─ async_sessionmaker
+                                        └─ AsyncEngine (pooled, app lifetime)
+                                             └─ asyncpg ──▶ PostgreSQL
+```
+
+Rules this layer holds to:
+
+- **The engine is built lazily and disposed at shutdown.** Constructing it opens
+  no connection, so an unreachable database does not stop the service starting
+  — the same tolerance that lets it run without a provider key.
+- **Sessions never commit implicitly.** A caller that writes says so. An
+  auto-committing dependency would bake a persistence policy into the framework
+  layer before any writer exists.
+- **`create_all()` is never called, and nothing migrates at startup.** The
+  schema is owned by migrations alone; two mechanisms claiming that ownership is
+  how environments drift.
+- **The async driver is mandatory.** A `postgresql://` URL is rejected during
+  settings validation, because against an async engine it otherwise fails at
+  connect time with a message that points nowhere useful.
+- **`DATABASE_URL` is a secret.** It carries a password outside local
+  development, so it is a `SecretStr`, is registered with the log redactor, and
+  a URL-credential pattern masks any that reaches a log line from elsewhere.
+  Error bodies never contain a connection string, host, or user.
+
+### Constraint naming
+
+`Base.metadata` carries an explicit naming convention, settled deliberately
+before the first table exists. PostgreSQL invents constraint names when none is
+given, and Alembic cannot reliably emit `DROP CONSTRAINT` for a name it does not
+know — so a later migration that alters a constraint fails or diverges between
+databases. Adopting the convention afterwards would mean a rename migration for
+every table already shipped.
+
+M3 ships no business tables. Tickets, conversations, and customers belong to M4;
+this milestone builds the road rather than driving on it.
 
 ## Planned components
 
