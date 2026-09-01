@@ -46,13 +46,50 @@ uvicorn app.main:app --reload --app-dir backend
 
 ### Database
 
+Requires PostgreSQL with the **pgvector** extension available on the server —
+M5 stores embeddings in a `vector(384)` column, and the migration runs
+`CREATE EXTENSION IF NOT EXISTS vector`. Without it, `alembic upgrade head`
+fails at that revision.
+
 ```bash
 createdb nexaassist
 ```
 
+#### Installing pgvector
+
+On most setups the package manager is enough:
+
+```bash
+brew install pgvector
+```
+
+That is **not sufficient on Homebrew PostgreSQL 15**: the bottle ships builds
+for postgresql@17 and @18 only, so `CREATE EXTENSION vector` still fails with
+"Could not open extension control file". Build it against your server instead —
+this installs only into that PostgreSQL's own directories and needs no restart:
+
+```bash
+git clone --branch v0.8.0 --depth 1 https://github.com/pgvector/pgvector.git
+```
+
+```bash
+cd pgvector && make PG_CONFIG=/opt/homebrew/opt/postgresql@15/bin/pg_config && make install
+```
+
+Confirm the server can see it before migrating:
+
+```bash
+psql -d nexaassist -c "SELECT name FROM pg_available_extensions WHERE name = 'vector'"
+```
+
+The extension itself is created per database by the migration, not by hand.
+
 Then set `DATABASE_URL` in `.env`. The async driver is required —
 `postgresql://` is rejected at startup. Leaving it unset runs the service
 without a database.
+
+Tests use a separate `nexaassist_test` database (`createdb nexaassist_test`),
+which also needs pgvector. They skip cleanly when PostgreSQL is unreachable.
 
 The schema is owned by migrations; nothing calls `create_all()` and nothing
 migrates automatically at startup.

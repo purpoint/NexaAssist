@@ -16,7 +16,9 @@
 | Backend tests | pytest + httpx | Standard; httpx drives the ASGI app in-process without a live server. |
 | LLM provider | Groq | Single provider to start; access is behind a protocol so a second one is an adapter, not a refactor. |
 | LLM SDK | `groq` (official) | Typed exceptions and transport-level retry/timeout. It has no `parse()` helper, so structured output is assembled in the provider. |
-| Database | PostgreSQL | Relational core with strong constraints; pgvector later rides on the same instance (M5). |
+| Database | PostgreSQL 15+ | Relational core with strong constraints. |
+| Vector search | pgvector | Embeddings live beside the relational data, so retrieval needs no second datastore to keep in sync. Requires the server-side extension — see `backend/README.md`. |
+| Embeddings | fastembed (BAAI/bge-small-en-v1.5, 384d) | Local ONNX: no API key and no per-call network. Groq serves no embeddings endpoint, so the model provider cannot supply them. |
 | DB toolkit | SQLAlchemy 2.0 (async) + asyncpg | The app is async end to end; a sync driver would block the event loop. |
 | Migrations | Alembic | The standard companion to SQLAlchemy; migrations reviewed as code. |
 | Default model | `openai/gpt-oss-120b` | One of the Groq models supporting strict structured output. Configurable via `LLM_MODEL`; nothing in the code hardcodes it. |
@@ -24,7 +26,6 @@
 ## Not yet decided
 
 - Agent / orchestration framework
-- Vector store and embedding model
 - Cache and background job runner
 - Authentication provider
 - UI component library and styling approach
