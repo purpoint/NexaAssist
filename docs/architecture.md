@@ -437,6 +437,30 @@ POST /api/v1/documents/answer
   numbers it used; titles, ids, and excerpts come from the retrieved rows, so a
   hallucinated citation cannot reach a reader.
 
+### Tool system (M6)
+
+```
+caller ─▶ ToolExecutor ─▶ ToolRegistry ─▶ Tool ─▶ Service ─▶ DB / retrieval
+                 └────────▶ ToolResult (always; never an exception)
+```
+
+- **Parameters are a Pydantic model**, so validation and the JSON Schema a
+  model-driven caller reads come from one definition rather than two that
+  drift.
+- **The executor never raises.** A tool is typically invoked on behalf of a
+  model, which cannot catch anything; an escaping exception would abort a whole
+  turn. Every outcome — unknown tool, invalid parameters, deliberate failure,
+  timeout, crash — is a `ToolResult`.
+- **Unexpected failures are reported generically.** The `error` field can
+  travel into a prompt and onward to a user, so driver messages, tracebacks,
+  and connection strings never reach it; only the exception type is logged.
+- **Registration is explicit.** What the system can be asked to *do* is visible
+  in one list, rather than depending on which modules happened to be imported.
+- **Tools return plain data.** A lazily-loaded ORM relationship serialised into
+  a prompt would raise at the worst possible moment.
+
+M6 adds no HTTP endpoints; the loop that chooses tools is M7.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

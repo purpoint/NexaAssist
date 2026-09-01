@@ -69,10 +69,21 @@ Delivered in three checkpoints.
       answers only from retrieved sources and rebuilds citations from
       retrieval rather than trusting the model
 
-## M6 — Tool System
+## M6 — Tool System ✅
 
-- [ ] Tool interface and registry
-- [ ] Tool execution and result handling
+Delivered in three checkpoints.
+
+- [x] Tool interface and registry: a `Tool` protocol whose parameters are a
+      Pydantic model (validation and JSON Schema from one definition), and an
+      explicit registry that rejects duplicate or malformed registrations
+- [x] Tool execution and result handling: an executor that validates, bounds
+      the call in time, and converts every failure into a `ToolResult` — no
+      exception escapes and no internals reach the caller
+- [x] Domain tools over the existing model: `lookup_ticket`, `list_tickets`,
+      `search_knowledge_base`
+
+No HTTP surface: M6 specifies none, and the agent loop that drives these
+belongs to M7.
 
 ## M7 — Agent Core
 
