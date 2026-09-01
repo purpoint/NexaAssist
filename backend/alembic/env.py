@@ -29,7 +29,12 @@ from app.models import metadata as target_metadata
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which would switch off every
+    # logger already configured -- including the application's -- for the rest
+    # of the process. Harmless for the alembic CLI, but migrations are also run
+    # programmatically (the test fixtures do it constantly), and a silently
+    # muted application logger is a bad way to find that out.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 
 def database_url() -> str:
