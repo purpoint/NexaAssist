@@ -578,6 +578,31 @@ routed reply ─▶ EscalationCriteria ─▶ HandoffService ─▶ review_items
 - **`review_items.ticket_id` is `SET NULL`**, not cascade: losing a ticket must
   not erase the record that a human was asked to look at something.
 
+### Conversation memory (M12)
+
+```
+conversations 1 ──< conversation_messages (position, role, content, token_estimate)
+                              │
+                              ▼
+                        ContextWindow ──▶ newest turns that fit the budget
+```
+
+- **`position` is explicit**, not inferred from `created_at`. Timestamps collide
+  at this resolution, and an exchange whose order depends on a tie-break will
+  eventually replay wrongly. Unique on `(conversation_id, position)`.
+- **The token estimate is stored, not recomputed.** Trimming a window on every
+  turn should not mean re-tokenising the whole history. It is deliberately
+  conservative: under-counting costs a failed request, over-counting costs a
+  little context.
+- **Recency wins.** The window is filled from the newest turn backwards, then
+  restored to reading order.
+- **The budget is never exceeded, even by one message.** A single turn larger
+  than the whole budget is truncated rather than dropped — answering the rest
+  of the exchange while discarding the actual question is worse than answering
+  a shortened version of it. Only the newest turn is ever truncated; an older
+  one is dropped whole, because a fragment of old context is worth less than
+  the space it costs.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

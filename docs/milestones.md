@@ -148,10 +148,17 @@ Delivered in three checkpoints.
       customer a person is involved — and never costing them a reply when the
       queue write fails
 
-## M12 — Conversation Memory
+## M12 — Conversation Memory ✅
 
-- [ ] Conversation state and history
-- [ ] Context window management
+Delivered in three checkpoints.
+
+- [x] Conversation state and history: `conversations` and
+      `conversation_messages`, with an explicit `position` rather than an order
+      inferred from timestamps
+- [x] Conversation service assigning positions and storing a token estimate
+      alongside each turn
+- [x] Context window management: recency-first selection that never exceeds the
+      budget, truncating the newest turn rather than dropping the question
 
 ## M13 — Redis + Background Jobs
 
