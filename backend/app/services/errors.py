@@ -14,3 +14,10 @@ class TicketNotFoundError(NotFoundError):
 
     code = "ticket_not_found"
     message = "The requested ticket was not found."
+
+
+class DocumentNotFoundError(NotFoundError):
+    """No document exists with the requested identifier."""
+
+    code = "document_not_found"
+    message = "The requested document was not found."

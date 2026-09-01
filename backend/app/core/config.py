@@ -76,6 +76,13 @@ class Settings(BaseSettings):
     db_max_overflow: int = Field(default=10, ge=0)
     # Echoes SQL *and* bound parameters, which can include customer data.
     db_echo: bool = Field(default=False)
+
+    # Which embedder to use. "fastembed" runs a local ONNX model; "hashing" is
+    # deterministic and offline, and is what the test suite uses so the suite
+    # never downloads a model or reaches the network.
+    embedding_provider: Literal["fastembed", "hashing"] = Field(default="fastembed")
+    # How many chunks a retrieval returns before the answer is composed.
+    retrieval_top_k: int = Field(default=4, ge=1, le=20)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property

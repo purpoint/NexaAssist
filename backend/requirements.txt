@@ -15,3 +15,5 @@ alembic>=1.13,<2.0
 pydantic[email]>=2.4,<3.0
 # pgvector column type + operators for similarity search.
 pgvector>=0.3,<1.0
+# Local ONNX embeddings: no API key, no per-call network.
+fastembed>=0.4,<1.0
