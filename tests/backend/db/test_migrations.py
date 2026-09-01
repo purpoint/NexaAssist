@@ -135,7 +135,7 @@ def test_head_creates_exactly_the_expected_tables(
     )
 
     assert tables == (
-        "alembic_version,customers,document_chunks,documents,tickets"
+        "alembic_version,customers,document_chunks,documents,review_items,tickets"
     )
 
 

@@ -34,7 +34,7 @@ EXPECTED_DATABASE = "nexaassist_test"
 
 BACKEND = Path(__file__).resolve().parents[3] / "backend"
 
-DOMAIN_TABLES = ("document_chunks", "documents", "tickets", "customers")
+DOMAIN_TABLES = ("review_items", "document_chunks", "documents", "tickets", "customers")
 """Written out literally, children first.
 
 Never discovered by querying ``information_schema``: a truncate driven by a

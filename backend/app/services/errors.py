@@ -21,3 +21,10 @@ class DocumentNotFoundError(NotFoundError):
 
     code = "document_not_found"
     message = "The requested document was not found."
+
+
+class ReviewItemNotFoundError(NotFoundError):
+    """No review item exists with the requested identifier."""
+
+    code = "review_item_not_found"
+    message = "The requested review item was not found."

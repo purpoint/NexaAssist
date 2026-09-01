@@ -191,6 +191,7 @@ def test_metadata_holds_exactly_the_registered_domain_tables() -> None:
         "customers",
         "document_chunks",
         "documents",
+        "review_items",
         "tickets",
     }
 
