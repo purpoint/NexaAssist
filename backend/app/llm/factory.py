@@ -46,6 +46,7 @@ def config_from_settings(settings: Settings) -> LLMConfig:
         api_key=settings.llm_api_key,
         timeout_seconds=settings.llm_timeout_seconds,
         max_retries=settings.llm_max_retries,
+        total_timeout_seconds=settings.llm_total_timeout_seconds,
         max_output_tokens=settings.llm_max_output_tokens,
         temperature=settings.llm_temperature,
     )

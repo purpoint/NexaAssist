@@ -28,6 +28,10 @@ class LLMConfig(BaseModel):
     api_key: SecretStr | None = None
     timeout_seconds: float = Field(default=30.0, gt=0)
     max_retries: int = Field(default=1, ge=0)
+    # Ceiling for one complete call. Distinct from ``timeout_seconds``, which
+    # bounds a single attempt: a provider that retries also sleeps between
+    # attempts, and that sleep counts against this budget.
+    total_timeout_seconds: float = Field(default=90.0, gt=0)
     max_output_tokens: int = Field(default=4096, gt=0)
     temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
@@ -89,5 +93,14 @@ class LLMProvider(Protocol):
         schema: type[T],
         config: LLMConfig | None = None,
     ) -> StructuredCompletion[T]:
-        """Return an instance of ``schema`` produced by the model."""
+        """Return an instance of ``schema`` produced by the model.
+
+        Implementations must return or raise within
+        ``config.total_timeout_seconds``, counting any internal retrying they
+        do. How that bound is achieved is the implementation's business; a
+        caller may rely only on the bound itself.
+
+        Failures are raised as :class:`~app.llm.errors.LLMError` or a subclass.
+        No provider-specific exception may escape this method.
+        """
         ...

@@ -29,7 +29,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Build and configure the FastAPI application."""
     settings = settings or get_settings()
 
-    configure_logging(settings.log_level)
+    # The configured key is registered as a literal to scrub, so it cannot
+    # surface through a third-party traceback or SDK debug logging.
+    secrets = (
+        [settings.llm_api_key.get_secret_value()]
+        if settings.llm_api_key is not None
+        else []
+    )
+    configure_logging(settings.log_level, secrets)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:

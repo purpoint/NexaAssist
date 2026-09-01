@@ -71,6 +71,7 @@ def test_config_is_projected_from_settings() -> None:
         llm_max_retries=3,
         llm_max_output_tokens=256,
         llm_temperature=0.2,
+        llm_total_timeout_seconds=99.0,
     )
 
     config = config_from_settings(settings)
@@ -83,6 +84,7 @@ def test_config_is_projected_from_settings() -> None:
     assert config.max_retries == 3
     assert config.max_output_tokens == 256
     assert config.temperature == 0.2
+    assert config.total_timeout_seconds == 99.0
 
 
 def test_api_key_is_read_from_the_groq_environment_variable(

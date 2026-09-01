@@ -153,12 +153,70 @@ it renders as `**********` in any repr, and it is never placed in a log line, an
 error body, or `.env.example`. Leaving it blank means *unset*, which lets the
 SDK resolve it from the environment.
 
-### Error handling (current state)
+### Error handling
 
-Every provider failure currently surfaces as a single `LLMError` (500). That is
-deliberate for this checkpoint and honest about how little the layer
-distinguishes so far. Classifying timeouts, rate limits, provider outages, and
-misconfiguration — each with its own status code — is the remaining M2 step.
+No provider exception escapes `app/llm/providers/`. Each SDK failure is
+translated into an `LLMError` subclass carrying a fixed status, a stable code,
+and a **generic** message — clients learn the category and nothing about our
+vendor, credentials, or request shape.
+
+| Provider failure | Application error | HTTP |
+| --- | --- | --- |
+| total deadline exceeded (backoff included) | `LLMTimeoutError` | 504 |
+| `APITimeoutError` (single attempt) | `LLMTimeoutError` | 504 |
+| `RateLimitError` | `LLMRateLimitError` | 429 + `Retry-After` |
+| `AuthenticationError`, `PermissionDeniedError`, `NotFoundError` | `LLMConfigurationError` | 500 |
+| `BadRequestError`, `UnprocessableEntityError` | `LLMRequestError` | 500 |
+| `APIStatusError` ≥ 500 | `LLMUnavailableError` | 503 |
+| `APIConnectionError` | `LLMUnavailableError` | 503 |
+| any other `APIError` | `LLMError` | 500 |
+| construction failure (`GroqError`, no key) | `LLMConfigurationError` | 500 |
+| empty content or failed Pydantic validation | `LLMInvalidOutputError` | 500 |
+
+**Upstream status codes are not our status codes.** A provider 401 means *we*
+misconfigured a key; the caller authenticated fine, so returning 401 would send
+them debugging their own credentials. Only genuinely retryable conditions —
+rate limiting, outage, timeout — pass a retryable status through.
+
+Catch clauses run most-specific-first, which the SDK hierarchy makes
+load-bearing: `APITimeoutError` is an `APIConnectionError`, and `RateLimitError`
+and friends are `APIStatusError`s. Tests pin this ordering.
+
+`details` is a fixed whitelist — `provider`, `model`, and `retry_after_seconds`
+— never `repr(exc)`. That matters more than log hygiene, because `details` is
+rendered into the HTTP response body.
+
+Invalid model output raises rather than being repaired or defaulted. There is
+no repair retry: a fabricated result that looks real is worse than a loud
+failure, and a silent second call would double latency and cost.
+
+### Request deadline
+
+`GroqProvider` wraps the whole SDK call in `asyncio.timeout`
+(`LLM_TOTAL_TIMEOUT_SECONDS`, default 90s). The bound belongs to the provider,
+not the service: the SDK retries and sleeps for backoff *inside* a single
+await, so only the provider can see the real cost of a call, and the service
+holds no `LLMConfig` to bound it with.
+
+The distinction is not academic. `LLM_TIMEOUT_SECONDS` bounds one attempt; a
+real smoke-test call took **34.8s** after a server-directed `retry-after`.
+Bounding only an attempt would not have bounded the request. A validator
+rejects a total smaller than the per-attempt timeout at startup.
+
+### Secret redaction
+
+`SecretRedactingFilter` is attached to the console handler, so it covers every
+logger in the process — ours, the provider SDK's, and the HTTP client's. It
+scrubs `gsk_` tokens, `Bearer` values, `*api[_-]?key`/`authorization`
+assignments, and any literal registered at startup (the configured key).
+
+Redaction runs on the *formatted* message: a secret passed as a `%s` argument
+never appears in `record.msg`, so filtering the template alone would miss it.
+
+It is a backstop, not the control. Nothing is supposed to log a credential, a
+prompt, or model output in the first place — `IntentService` logs only
+provider, model, prompt version, intent, latency, and token counts, and tests
+assert the customer message and the model's `reason` never appear.
 
 ## Intent analysis
 

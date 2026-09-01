@@ -6,10 +6,10 @@ directly -- add the variable here instead, and document it in ``.env.example``.
 """
 
 from functools import lru_cache
-from typing import Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import AliasChoices, Field, SecretStr, field_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import AliasChoices, Field, SecretStr, field_validator, model_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -37,7 +37,15 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO")
 
-    cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    # ``NoDecode`` is load-bearing, not decoration. Without it
+    # pydantic-settings JSON-decodes complex-typed fields straight off the
+    # environment or .env file, before any validator runs -- so the documented
+    # comma-separated form raises SettingsError and the setting is unusable
+    # from any external source. Scoped to this field on purpose: disabling
+    # decoding globally would silently change behaviour for future settings.
+    cors_origins: Annotated[list[str], NoDecode] = Field(
+        default_factory=lambda: ["http://localhost:5173"]
+    )
 
     llm_provider: Literal["groq", "static"] = Field(default="groq")
     # Structured outputs are model-dependent on Groq; see docs/architecture.md
@@ -55,6 +63,10 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = Field(default=30.0, gt=0)
     llm_max_retries: int = Field(default=1, ge=0)
     llm_max_output_tokens: int = Field(default=4096, gt=0)
+    # Ceiling for one complete provider call. Must exceed the per-attempt
+    # timeout, because retry backoff sleeps count against it -- a real call
+    # was observed taking 34.8s after a server-directed retry-after.
+    llm_total_timeout_seconds: float = Field(default=90.0, gt=0)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property
@@ -85,6 +97,16 @@ class Settings(BaseSettings):
         if isinstance(value, str) and not value.strip():
             return None
         return value
+
+    @model_validator(mode="after")
+    def _total_timeout_covers_one_attempt(self) -> Self:
+        """A total budget smaller than a single attempt could never be met."""
+        if self.llm_total_timeout_seconds < self.llm_timeout_seconds:
+            raise ValueError(
+                "LLM_TOTAL_TIMEOUT_SECONDS must be at least LLM_TIMEOUT_SECONDS "
+                f"({self.llm_total_timeout_seconds} < {self.llm_timeout_seconds})."
+            )
+        return self
 
 
 @lru_cache

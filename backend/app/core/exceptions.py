@@ -37,6 +37,9 @@ class AppError(Exception):
     status_code: int = 500
     code: str = "internal_error"
     message: str = "An unexpected error occurred."
+    # Optional response headers. Subclasses override this (as a property or an
+    # attribute) when the status calls for one -- e.g. Retry-After on a 429.
+    headers: dict[str, str] | None = None
 
     def __init__(self, message: str | None = None, *, details: Any | None = None) -> None:
         self.message = message if message is not None else type(self).message
@@ -78,7 +81,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         logger.warning("%s %s -> %s: %s", request.method, request.url.path, exc.code, exc.message)
-        return _render(exc.to_response(), exc.status_code)
+        return _render(exc.to_response(), exc.status_code, headers=exc.headers)
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:

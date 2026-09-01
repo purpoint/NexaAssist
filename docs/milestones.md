@@ -30,8 +30,10 @@ Delivered in three checkpoints.
 - [x] Groq provider foundation and a deterministic `StaticLLMProvider`
 - [x] Structured intent analysis: `IntentAnalysis`, `IntentService`, and
       `POST /api/v1/intent/analyze`
-- [ ] Hardened LLM error taxonomy, bounded repair retry, outer request
-      deadline, and secret redaction in logging
+- [x] Hardened LLM error taxonomy, total request deadline, secret redaction
+      in logging, and the `CORS_ORIGINS` startup fix
+      _(bounded repair retry deliberately dropped: strict mode plus a clean
+      6/6 live smoke test gave no evidence it was needed)_
 
 ## M3 — PostgreSQL + Alembic
 

@@ -14,7 +14,14 @@ from pydantic import ValidationError
 from app.api.v1.intent import get_intent_service
 from app.core.config import Settings
 from app.llm.base import LLMConfig
-from app.llm.errors import LLMError
+from app.llm.errors import (
+    LLMConfigurationError,
+    LLMError,
+    LLMInvalidOutputError,
+    LLMRateLimitError,
+    LLMTimeoutError,
+    LLMUnavailableError,
+)
 from app.llm.factory import build_provider, get_llm_provider
 from app.llm.prompts import INTENT_SYSTEM_PROMPT
 from app.main import create_app
@@ -251,3 +258,72 @@ def test_strict_schema_for_intent_analysis_meets_groq_requirements() -> None:
         "complaint",
         "other",
     ]
+
+
+# --------------------------------------------------------------------------
+# Error envelopes for the hardened taxonomy (additive)
+# --------------------------------------------------------------------------
+
+
+ERROR_CASES = [
+    (LLMConfigurationError(), 500, "llm_configuration_error"),
+    (LLMRateLimitError(), 429, "llm_rate_limited"),
+    (LLMTimeoutError(), 504, "llm_timeout"),
+    (LLMUnavailableError(), 503, "llm_unavailable"),
+    (LLMInvalidOutputError(), 500, "llm_invalid_output"),
+    (LLMError(), 500, "llm_error"),
+]
+
+
+@pytest.mark.parametrize(
+    ("error", "status", "code"),
+    ERROR_CASES,
+    ids=[code for _, _, code in ERROR_CASES],
+)
+def test_each_llm_error_reaches_the_shared_envelope(
+    settings: Settings, error: LLMError, status: int, code: str
+) -> None:
+    for test_client in client_with(FakeLLMProvider(error=error), settings):
+        response = test_client.post(ANALYZE_URL, json={"message": "hi"})
+
+    assert response.status_code == status
+    body = response.json()
+    assert body["code"] == code
+    assert set(body) <= {"code", "message", "details"}
+
+
+def test_rate_limit_response_carries_a_retry_after_header(settings: Settings) -> None:
+    error = LLMRateLimitError(
+        details={"provider": "groq", "model": "m"}, retry_after_seconds=34.0
+    )
+
+    for test_client in client_with(FakeLLMProvider(error=error), settings):
+        response = test_client.post(ANALYZE_URL, json={"message": "hi"})
+
+    assert response.status_code == 429
+    assert response.headers["retry-after"] == "34"
+    assert response.json()["details"]["retry_after_seconds"] == 34.0
+
+
+def test_rate_limit_without_retry_after_omits_the_header(settings: Settings) -> None:
+    for test_client in client_with(FakeLLMProvider(error=LLMRateLimitError()), settings):
+        response = test_client.post(ANALYZE_URL, json={"message": "hi"})
+
+    assert response.status_code == 429
+    assert "retry-after" not in response.headers
+
+
+def test_provider_construction_failure_reaches_the_envelope(settings: Settings) -> None:
+    """A dependency-time failure must not escape as an unstructured 500."""
+
+    def explode() -> object:
+        raise LLMConfigurationError(details={"provider": "groq"})
+
+    app = create_app(settings)
+    app.dependency_overrides[get_llm_provider] = explode
+
+    with TestClient(app) as test_client:
+        response = test_client.post(ANALYZE_URL, json={"message": "hi"})
+
+    assert response.status_code == 500
+    assert response.json()["code"] == "llm_configuration_error"
