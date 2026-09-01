@@ -124,10 +124,17 @@ Delivered in three checkpoints.
 Workflows are the deterministic counterpart to the M7 agent, for cases where
 the right steps are already known — not a replacement for it.
 
-## M10 — Deterministic Policy Engine
+## M10 — Deterministic Policy Engine ✅
 
-- [ ] Policy rules evaluated outside the model
-- [ ] Policy precedence over model output
+Delivered in three checkpoints.
+
+- [x] Policy rules evaluated outside the model: pure functions over the message,
+      its classification, and the proposed reply — no provider call, no
+      database, no clock, so the same input always yields the same decision
+- [x] Policy precedence over model output: policy runs *after* the handler, on
+      what would actually be sent, and the model cannot overrule it
+- [x] A shipped rule set — no financial commitments, complaints to a human,
+      unresolved requests not claimed as answered — wired into routing
 
 ## M11 — Human-in-the-Loop
 

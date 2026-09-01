@@ -537,6 +537,27 @@ Workflow (data)        WorkflowRunner            ToolExecutor
 - **Workflows and the agent share one tool registry**, so they cannot disagree
   about what a tool does.
 
+### Policy (M10)
+
+```
+handler reply ──▶ PolicyEngine (ordered rules) ──▶ PolicyEnforcer ──▶ sent reply
+                        first non-allow wins        model cannot overrule
+```
+
+- **Policy runs after generation, not before.** Asking a model to respect a
+  rule makes compliance a suggestion; applying the rule to the finished reply
+  makes it a guarantee.
+- **Rules are pure.** No provider, database, clock, or randomness — the value of
+  a policy engine is that a decision is reproducible and explainable without
+  replaying a generation. A test asserts the modules import none of those.
+- **Ordering is precedence**, and it is explicit. The first non-`allow` outcome
+  wins; money is checked first because it is the costliest thing to get wrong.
+- **A block overrides the handler's own verdict.** `handled` becomes false
+  regardless of what the handler believed, because a blocked reply resolved
+  nothing.
+- **The original reply is always retained** alongside the enforced one, so a
+  decision can be audited after the fact.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

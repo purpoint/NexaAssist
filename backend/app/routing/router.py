@@ -18,6 +18,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.logging import get_logger
+from app.policy.enforcement import PolicyEnforcer
 from app.routing.handlers import HandlerRequest, HandlerResponse, IntentHandler
 from app.routing.registry import HandlerRegistry
 from app.schemas.intent import IntentAnalysis, IntentCategory
@@ -56,6 +57,12 @@ class RoutedReply(BaseModel):
     decision: RoutingDecision
     reply: str
     handled: bool
+    policy_rule: str | None = Field(
+        default=None, description="The policy rule that decided the final reply."
+    )
+    policy_modified: bool = Field(
+        default=False, description="True when policy changed what would have been sent."
+    )
 
 
 class IntentRouter:
@@ -67,10 +74,12 @@ class IntentRouter:
         fallback: IntentHandler,
         *,
         min_confidence: float = DEFAULT_MIN_CONFIDENCE,
+        enforcer: PolicyEnforcer | None = None,
     ) -> None:
         self._registry = registry
         self._fallback = fallback
         self._min_confidence = min_confidence
+        self._enforcer = enforcer
 
     def decide(self, analysis: IntentAnalysis) -> RoutingDecision:
         """Choose a handler without running it.
@@ -109,6 +118,21 @@ class IntentRouter:
             HandlerRequest(message=message, analysis=analysis)
         )
 
+        # Policy runs after the handler, on what would actually be sent, and
+        # the handler cannot overrule it.
+        reply, handled = response.reply, response.handled
+        policy_rule: str | None = None
+        policy_modified = False
+        if self._enforcer is not None:
+            enforced = self._enforcer.enforce(
+                message=message,
+                analysis=analysis,
+                proposed_reply=response.reply,
+                handled=response.handled,
+            )
+            reply, handled = enforced.reply, enforced.handled
+            policy_rule, policy_modified = enforced.rule, enforced.modified
+
         # Intent, confidence, and routing reason only. The message and the
         # reply are customer content.
         logger.info(
@@ -118,10 +142,14 @@ class IntentRouter:
             response.handler,
             decision.reason.value,
             decision.fallback,
-            response.handled,
+            handled,
         )
         return RoutedReply(
-            decision=decision, reply=response.reply, handled=response.handled
+            decision=decision,
+            reply=reply,
+            handled=handled,
+            policy_rule=policy_rule,
+            policy_modified=policy_modified,
         )
 
     def _to_fallback(

@@ -14,7 +14,7 @@ from app.core.config import Settings
 from app.llm.base import LLMPrompt, LLMUsage, StructuredCompletion
 from app.rag.embeddings import HashingEmbeddingProvider
 from app.routing.factory import build_router
-from app.routing.intent_handlers import UNRESOLVED
+from app.policy.library import REVIEW_REPLY
 from app.routing.router import RouteReason
 from app.schemas.intent import IntentAnalysis, IntentCategory
 from app.services.answer import GroundedModelAnswer
@@ -189,8 +189,12 @@ async def test_other_reaches_the_fallback_without_guessing(
     )
 
     assert reply.decision.reason is RouteReason.NO_CATEGORY
-    assert reply.reply == UNRESOLVED
     assert reply.handled is False
+    # M10: the fallback's own wording is now replaced by policy, because an
+    # unresolved request must not be answered as though it were resolved.
+    assert reply.reply == REVIEW_REPLY
+    assert reply.policy_rule == "unresolved_requests_reach_a_human"
+    assert reply.policy_modified is True
 
 
 @pytest.mark.anyio
@@ -204,7 +208,8 @@ async def test_a_low_confidence_classification_is_not_acted_on(
     )
 
     assert reply.decision.reason is RouteReason.LOW_CONFIDENCE
-    assert reply.reply == UNRESOLVED
+    assert reply.reply == REVIEW_REPLY  # policy rewrote the fallback wording
+    assert reply.handled is False
     assert used.schemas == []  # no model was consulted at all
 
 

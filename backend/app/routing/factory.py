@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.factory import build_agent
 from app.core.config import Settings
 from app.llm.base import LLMProvider
+from app.policy.enforcement import PolicyEnforcer
+from app.policy.library import default_rules
+from app.policy.rules import PolicyEngine
 from app.rag.embeddings import EmbeddingProvider
 from app.routing.handlers import IntentHandler
 from app.routing.intent_handlers import (
@@ -57,5 +60,8 @@ def build_router(
 
     registry.require_complete()
     return IntentRouter(
-        registry, fallback, min_confidence=settings.routing_min_confidence
+        registry,
+        fallback,
+        min_confidence=settings.routing_min_confidence,
+        enforcer=PolicyEnforcer(PolicyEngine(default_rules())),
     )
