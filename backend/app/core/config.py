@@ -88,6 +88,12 @@ class Settings(BaseSettings):
     # without calling a tool, and can call tools more often than it takes steps.
     agent_max_steps: int = Field(default=6, ge=1, le=50)
     agent_max_tool_calls: int = Field(default=8, ge=0, le=100)
+
+    # Below this self-reported confidence a classification is treated as
+    # ambiguous and sent to the fallback instead of a specialised handler.
+    # Self-reported, not calibrated -- see docs/prompt.md -- so this is a
+    # coarse guard, not a probability threshold.
+    routing_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)
 
     @property
