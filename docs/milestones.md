@@ -35,11 +35,18 @@ Delivered in three checkpoints.
       _(bounded repair retry deliberately dropped: strict mode plus a clean
       6/6 live smoke test gave no evidence it was needed)_
 
-## M3 — PostgreSQL + Alembic
+## M3 — PostgreSQL + Alembic ✅
 
-- [ ] Database connection layer
-- [ ] Alembic migrations
-- [ ] Persistence models
+Delivered in three checkpoints.
+
+- [x] Database connection layer: async engine, pooling, request-scoped
+      sessions, lifecycle, and database errors on the shared envelope
+- [x] Alembic migrations: async `env.py` sourcing its URL from `Settings`,
+      baseline revision, and a proven upgrade/downgrade round trip
+- [x] Persistence models: declarative `Base`, constraint naming convention,
+      and `TimestampMixin`
+- [x] `GET /api/v1/ready` reporting real database connectivity
+      _(no business tables — those arrive with M4)_
 
 ## M4 — Core Business Domain
 

@@ -8,6 +8,7 @@
 ```
 Client (React + TS)  ──HTTP──▶  FastAPI service
                                   ├── GET  /api/v1/health
+                                  ├── GET  /api/v1/ready
                                   ├── POST /api/v1/intent/analyze
                                   └── GET  /api/health   (deprecated alias)
 ```
@@ -301,6 +302,34 @@ every table already shipped.
 
 M3 ships no business tables. Tickets, conversations, and customers belong to M4;
 this milestone builds the road rather than driving on it.
+
+### Readiness
+
+`GET /api/v1/ready` is deliberately separate from `GET /api/v1/health`, and the
+health contract is unchanged.
+
+| | Question | Behaviour when the database is down |
+| --- | --- | --- |
+| `/health` | Is this process alive? | **still 200** |
+| `/ready` | Should traffic come here? | **503** |
+
+Conflating the two is a well-known way to make an outage worse: if liveness
+follows readiness, an orchestrator restarts a perfectly healthy process because
+a dependency blipped, and the restart storm outlasts the original fault.
+
+The probe performs a real `SELECT 1` rather than inspecting the pool — a pooled
+connection can look healthy while the server behind it is gone.
+
+An unreachable database yields 503 through the standard `ErrorResponse`, so a
+load balancer can act on the status code without parsing a body. A database
+that was never configured is reported as `not_configured` with a 200: running
+without one is a supported mode, and the body says so plainly rather than
+pretending the service is broken.
+
+Error bodies from this path carry `{"component": "database"}` and nothing else.
+Driver messages routinely contain the host, the user, and sometimes the
+connection string, so none of them reaches a response or a log line — only the
+exception type is logged.
 
 ### Migrations
 

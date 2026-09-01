@@ -16,6 +16,7 @@ app/
 │   └── health.py       GET /health
 ├── db/
 │   ├── base.py         DeclarativeBase, naming convention, TimestampMixin
+│   ├── health.py       connectivity probe used by /ready
 │   ├── engine.py       async engine + pool lifecycle
 │   ├── session.py      request-scoped AsyncSession dependency
 │   └── errors.py       database failures as AppError subclasses
@@ -38,7 +39,8 @@ From the repository root, with dependencies installed:
 uvicorn app.main:app --reload --app-dir backend
 ```
 
-- Health: `GET /api/v1/health`
+- Liveness: `GET /api/v1/health`
+- Readiness: `GET /api/v1/ready`
 - Docs: `/docs`
 
 ### Database
