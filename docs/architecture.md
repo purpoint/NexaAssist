@@ -10,6 +10,9 @@ Client (React + TS)  ──HTTP──▶  FastAPI service
                                   ├── GET  /api/v1/health
                                   ├── GET  /api/v1/ready
                                   ├── POST /api/v1/intent/analyze
+                                  ├── POST /api/v1/tickets
+                                  ├── GET  /api/v1/tickets
+                                  ├── GET  /api/v1/tickets/{id}
                                   └── GET  /api/health   (deprecated alias)
 ```
 
@@ -385,6 +388,28 @@ Each index maps to a query the API issues; none is speculative.
 
 The composite is named explicitly: the project convention derives an index name
 from its first column alone, which would collide with a plain status index.
+
+### Ticket flow
+
+```
+POST /api/v1/tickets
+  └─ api/v1/tickets.py   validate, delegate, return   (no logic)
+      └─ TicketService   get-or-create customer, insert, commit
+          └─ AsyncSession (request-scoped, no implicit commit)
+              └─ PostgreSQL
+```
+
+The service owns the transaction boundary because only it knows what one
+complete business operation is — here, "a ticket exists, along with the
+customer it belongs to". Get-or-create races on the unique email constraint;
+the insert runs inside a SAVEPOINT so the loser rolls back one statement rather
+than the whole request.
+
+Listings order by `created_at DESC, id DESC`. Timestamps collide at this
+resolution, and an unstable sort makes pagination skip or repeat rows.
+
+Responses carry `customer_id`, never the customer object: the relationship is
+`lazy="raise"` and nothing in the contract needs it.
 
 ### Migrations
 

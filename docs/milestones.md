@@ -48,10 +48,15 @@ Delivered in three checkpoints.
 - [x] `GET /api/v1/ready` reporting real database connectivity
       _(no business tables — those arrive with M4)_
 
-## M4 — Core Business Domain
+## M4 — Core Business Domain ✅
 
-- [ ] First domain resource end to end _(carried over from M1, needed persistence)_
-- [ ] Domain models and service layer
+Delivered in three checkpoints.
+
+- [x] First domain resource end to end: `POST/GET /api/v1/tickets`
+- [x] Domain models: `Customer` and `Ticket`, with constraints, indexes, and
+      an Alembic migration
+- [x] Service layer: `TicketService` owning the transaction boundary, depending
+      on a session and neither FastAPI nor a provider SDK
 
 ## M5 — RAG + pgvector
 

@@ -41,6 +41,7 @@ uvicorn app.main:app --reload --app-dir backend
 
 - Liveness: `GET /api/v1/health`
 - Readiness: `GET /api/v1/ready`
+- Tickets: `POST/GET /api/v1/tickets`
 - Docs: `/docs`
 
 ### Database
