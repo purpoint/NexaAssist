@@ -99,10 +99,36 @@ def test_at_least_the_baseline_revision_exists() -> None:
     assert any("baseline" in (r.doc or "") for r in revisions)
 
 
-def test_migrations_declare_no_business_tables_yet() -> None:
-    """M3 ships the foundation; domain tables belong to M4."""
-    for path in VERSIONS.glob("*.py"):
-        assert "create_table" not in path.read_text(), path.name
+def test_the_baseline_revision_declares_no_tables() -> None:
+    """The baseline only anchors the chain; tables arrive in later revisions."""
+    baseline = next(VERSIONS.glob("*_baseline.py"))
+
+    assert "create_table" not in baseline.read_text()
+
+
+def test_the_domain_revision_creates_both_tables() -> None:
+    revision = next(VERSIONS.glob("*_add_customers_and_tickets.py"))
+    source = revision.read_text()
+
+    assert 'op.create_table("customers"' in source or "op.create_table('customers'" in source
+    assert 'op.create_table("tickets"' in source or "op.create_table('tickets'" in source
+    assert "op.drop_table" in source
+
+
+def test_status_values_are_written_literally_in_the_migration() -> None:
+    """A migration must not import a live enum.
+
+    It records the schema as it was at that revision; importing
+    ``TicketStatus`` would silently change the migration's meaning the next
+    time someone edited the enum.
+    """
+    revision = next(VERSIONS.glob("*_add_customers_and_tickets.py"))
+    source = revision.read_text()
+
+    assert "from app.models" not in source
+    assert "TicketStatus" not in source
+    for value in ("open", "pending", "resolved", "closed"):
+        assert f"'{value}'" in source
 
 
 def test_no_migration_references_another_projects_database() -> None:

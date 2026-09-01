@@ -27,7 +27,7 @@ app/
 │   ├── prompts.py      prompt text, versioned as named constants
 │   └── providers/      concrete implementations (groq, static)
 ├── schemas/            request/response models (common.py holds shared shapes)
-├── models/             persistence models (empty -- no database yet)
+├── models/             persistence models (customers, tickets)
 └── services/           domain logic (empty -- no workflows yet)
 ```
 

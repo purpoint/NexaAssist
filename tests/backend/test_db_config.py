@@ -181,9 +181,13 @@ def test_naming_convention_covers_every_constraint_kind() -> None:
     assert set(NAMING_CONVENTION) == {"ix", "uq", "ck", "fk", "pk"}
 
 
-def test_m3_ships_no_business_tables() -> None:
-    """Domain tables belong to M4; M3 delivers only the foundation."""
-    assert Base.metadata.tables == {}
+def test_metadata_holds_exactly_the_registered_domain_tables() -> None:
+    """Guards against a table appearing without anyone noticing.
+
+    Was ``metadata == {}`` while M3 shipped no business tables; M4 adds the
+    first two, so the guard now pins the expected set instead.
+    """
+    assert set(Base.metadata.tables) == {"customers", "tickets"}
 
 
 def test_timestamp_mixin_columns_are_timezone_aware() -> None:

@@ -119,17 +119,22 @@ def test_upgrade_is_idempotent(migrated: Config, test_database_url: str) -> None
     assert scalar(test_database_url, "SELECT count(*) FROM alembic_version") == 1
 
 
-def test_baseline_creates_no_business_tables(
+def test_head_creates_exactly_the_expected_tables(
     migrated: Config, test_database_url: str
 ) -> None:
-    """At head, the only table should be Alembic's own bookkeeping."""
+    """At head the schema is bookkeeping plus the M4 domain tables.
+
+    Was "no business tables" while the baseline stood alone. Pinning the exact
+    set keeps the original value of the check -- an unexpected table still
+    fails it.
+    """
     tables = scalar(
         test_database_url,
-        "SELECT count(*) FROM information_schema.tables "
-        "WHERE table_schema='public' AND table_name <> 'alembic_version'",
+        "SELECT string_agg(table_name, ',' ORDER BY table_name) "
+        "FROM information_schema.tables WHERE table_schema='public'",
     )
 
-    assert tables == 0
+    assert tables == "alembic_version,customers,tickets"
 
 
 # --------------------------------------------------------------------------
