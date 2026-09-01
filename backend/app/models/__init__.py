@@ -11,6 +11,7 @@ milestones.
 """
 
 from app.db.base import Base
+from app.models.conversation import Conversation, ConversationMessage, MessageRole
 from app.models.customer import Customer
 from app.models.document import EMBEDDING_DIMENSIONS, Document, DocumentChunk
 from app.models.review import ReviewItem, ReviewStatus
@@ -21,7 +22,10 @@ metadata = Base.metadata
 __all__ = [
     "EMBEDDING_DIMENSIONS",
     "Base",
+    "Conversation",
+    "ConversationMessage",
     "Customer",
+    "MessageRole",
     "Document",
     "DocumentChunk",
     "ReviewItem",

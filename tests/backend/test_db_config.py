@@ -188,6 +188,8 @@ def test_metadata_holds_exactly_the_registered_domain_tables() -> None:
     first two, so the guard now pins the expected set instead.
     """
     assert set(Base.metadata.tables) == {
+        "conversation_messages",
+        "conversations",
         "customers",
         "document_chunks",
         "documents",
