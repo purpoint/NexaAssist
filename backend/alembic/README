@@ -1,0 +1,8 @@
+Alembic migrations for NexaAssist (async, PostgreSQL).
+
+The database URL is NOT configured here or in alembic.ini. It is resolved by
+env.py from the application's Settings, so there is one source of truth and no
+credential lives in a tracked file.
+
+Run from the backend/ directory with DATABASE_URL set. See backend/README.md
+for the commands and the rules migrations are held to.
