@@ -98,10 +98,17 @@ Delivered in three checkpoints.
 No HTTP surface: the roadmap specifies none, and choosing *which* agent handles
 a request is routing, which is M8.
 
-## M8 — Intent Router
+## M8 — Intent Router ✅
 
-- [ ] Route classified intents to handlers
-- [ ] Fallback and ambiguity handling
+Delivered in three checkpoints.
+
+- [x] Handler protocol and an explicit intent-to-handler registry that refuses
+      to start with an unmapped category
+- [x] Fallback and ambiguity handling: three distinct reasons — no category,
+      low confidence, no handler — sharing one destination but never one label
+- [x] Concrete handlers over existing capabilities: the M5 knowledge base for
+      documented answers, the M7 agent for account-state questions, and a
+      fallback that declines to guess
 
 ## M9 — Specialized Workflows
 

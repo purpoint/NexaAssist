@@ -482,6 +482,34 @@ AgentLoop.run(question)
 - **The transcript excludes tool output.** It may be logged or returned, and
   outputs carry customer content; only names, outcomes, and timings appear.
 
+### Intent routing (M8)
+
+```
+IntentAnalysis ─▶ IntentRouter.decide ─▶ handler
+                        │
+                        ├─ other            ─┐
+                        ├─ low confidence   ─┼─▶ FallbackHandler (declines to guess)
+                        └─ no handler       ─┘
+```
+
+| Intent | Handler | Why |
+| --- | --- | --- |
+| `product_question`, `account` | knowledge base | the answer is documented |
+| `billing`, `technical_support`, `complaint` | agent | needs to inspect account state |
+| `other` | fallback | no category fits |
+
+- **Three fallback reasons, one destination.** They must stay distinguishable
+  in logs: "the classifier keeps saying other" and "we never wired that
+  category" are different problems with the same symptom.
+- **`require_complete()` runs at wiring time.** An unmapped category silently
+  becomes fallback traffic, which reads as classifier drift rather than a
+  missing route.
+- **Low confidence means the model is not consulted at all.** Acting anyway is
+  exactly the guess the threshold exists to reject. Confidence is self-reported,
+  not calibrated, so the threshold is a coarse guard.
+- **`decide()` is separate from `route()`**, so the choice can be inspected and
+  tested without running a handler.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
