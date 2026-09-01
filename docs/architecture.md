@@ -558,6 +558,26 @@ handler reply ──▶ PolicyEngine (ordered rules) ──▶ PolicyEnforcer �
 - **The original reply is always retained** alongside the enforced one, so a
   decision can be audited after the fact.
 
+### Human-in-the-loop (M11)
+
+```
+routed reply ─▶ EscalationCriteria ─▶ HandoffService ─▶ review_items (pending)
+                (deterministic)          notice appended to the reply
+```
+
+- **Reasons accumulate.** "Unresolved *and* a complaint" reads very differently
+  in a queue from either alone, and the mix of reasons is how you tell an
+  underperforming classifier from an overcautious policy.
+- **`other` is not also counted as low confidence.** One situation, one reason;
+  double counting would distort triage.
+- **Claiming is race-safe.** The status check lives inside the `UPDATE`, so two
+  reviewers opening the queue together cannot both take the same item.
+- **A queue failure never costs the customer their reply.** Losing the entry is
+  recoverable; dropping the reply is not. The failure is logged by exception
+  type only and the reply still goes out, with `queued=False` recording it.
+- **`review_items.ticket_id` is `SET NULL`**, not cascade: losing a ticket must
+  not erase the record that a human was asked to look at something.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

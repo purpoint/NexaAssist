@@ -136,10 +136,17 @@ Delivered in three checkpoints.
 - [x] A shipped rule set — no financial commitments, complaints to a human,
       unresolved requests not claimed as answered — wired into routing
 
-## M11 — Human-in-the-Loop
+## M11 — Human-in-the-Loop ✅
 
-- [ ] Escalation criteria
-- [ ] Handoff and human review queue
+Delivered in three checkpoints.
+
+- [x] Escalation criteria: deterministic, evaluated outside the model, with
+      reasons that accumulate rather than short-circuit
+- [x] Human review queue: `review_items`, with claiming made race-safe by
+      putting the status check inside the UPDATE
+- [x] Handoff: escalation applied after routing and policy, telling the
+      customer a person is involved — and never costing them a reply when the
+      queue write fails
 
 ## M12 — Conversation Memory
 
