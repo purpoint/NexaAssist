@@ -159,3 +159,43 @@ def test_partial_or_malformed_references_are_literals(value: object) -> None:
 
 def test_reference_helper_round_trips() -> None:
     assert referenced_step(reference_to("lookup")) == "lookup"
+
+
+# --------------------------------------------------------------------------
+# Declared inputs
+# --------------------------------------------------------------------------
+
+
+def test_a_workflow_may_declare_inputs() -> None:
+    definition = Workflow(
+        name="w",
+        description="d",
+        inputs=["ticket_id"],
+        steps=[step("a", params={"q": reference_to("ticket_id")})],
+    )
+
+    assert definition.inputs == ["ticket_id"]
+
+
+def test_referencing_an_undeclared_input_is_rejected() -> None:
+    """Inputs are declared so a reference to one is validated like any other."""
+    with pytest.raises(ValidationError, match="do not appear before it"):
+        Workflow(
+            name="w",
+            description="d",
+            steps=[step("a", params={"q": reference_to("ticket_id")})],
+        )
+
+
+def test_input_names_must_be_identifiers() -> None:
+    with pytest.raises(ValidationError, match="valid identifier"):
+        Workflow(name="w", description="d", inputs=["Ticket-Id"], steps=[step()])
+
+
+def test_a_step_may_not_shadow_an_input() -> None:
+    with pytest.raises(ValidationError, match="Duplicate step id"):
+        Workflow(name="w", description="d", inputs=["lookup"], steps=[step("lookup")])
+
+
+def test_workflows_without_inputs_still_validate() -> None:
+    assert workflow().inputs == []

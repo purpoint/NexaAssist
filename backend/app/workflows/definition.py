@@ -69,6 +69,14 @@ class Workflow(BaseModel):
 
     name: str
     description: str = Field(min_length=1)
+    inputs: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Names the caller must supply at run time. Declared rather than "
+            "implicit so a reference to an input is validated like any other, "
+            "and so a workflow documents what it needs."
+        ),
+    )
     steps: list[WorkflowStep] = Field(min_length=1, max_length=MAX_STEPS)
 
     @model_validator(mode="after")
@@ -76,10 +84,17 @@ class Workflow(BaseModel):
         if not NAME_PATTERN.match(self.name):
             raise ValueError(f"Workflow name {self.name!r} must be a valid identifier.")
 
-        seen: set[str] = set()
+        for name in self.inputs:
+            if not NAME_PATTERN.match(name):
+                raise ValueError(f"Input name {name!r} must be a valid identifier.")
+
+        # Declared inputs are available to every step, so they seed the set of
+        # names a reference may legally resolve to.
+        seen: set[str] = set(self.inputs)
         for step in self.steps:
             if step.id in seen:
-                # Duplicate ids would make a reference ambiguous.
+                # Duplicate ids -- or an id shadowing an input -- would make a
+                # reference ambiguous.
                 raise ValueError(f"Duplicate step id {step.id!r}.")
             # References are checked against steps already seen, which also
             # rules out forward and self references -- a workflow is a
