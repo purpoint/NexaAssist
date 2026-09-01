@@ -13,3 +13,5 @@ asyncpg>=0.30,<1.0
 alembic>=1.13,<2.0
 # EmailStr at the API edge; hand-rolled email regexes reject valid addresses.
 pydantic[email]>=2.4,<3.0
+# pgvector column type + operators for similarity search.
+pgvector>=0.3,<1.0

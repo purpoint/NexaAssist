@@ -187,7 +187,12 @@ def test_metadata_holds_exactly_the_registered_domain_tables() -> None:
     Was ``metadata == {}`` while M3 shipped no business tables; M4 adds the
     first two, so the guard now pins the expected set instead.
     """
-    assert set(Base.metadata.tables) == {"customers", "tickets"}
+    assert set(Base.metadata.tables) == {
+        "customers",
+        "document_chunks",
+        "documents",
+        "tickets",
+    }
 
 
 def test_timestamp_mixin_columns_are_timezone_aware() -> None:

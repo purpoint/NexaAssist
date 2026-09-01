@@ -12,8 +12,18 @@ milestones.
 
 from app.db.base import Base
 from app.models.customer import Customer
+from app.models.document import EMBEDDING_DIMENSIONS, Document, DocumentChunk
 from app.models.ticket import Ticket, TicketStatus
 
 metadata = Base.metadata
 
-__all__ = ["Base", "Customer", "Ticket", "TicketStatus", "metadata"]
+__all__ = [
+    "EMBEDDING_DIMENSIONS",
+    "Base",
+    "Customer",
+    "Document",
+    "DocumentChunk",
+    "Ticket",
+    "TicketStatus",
+    "metadata",
+]

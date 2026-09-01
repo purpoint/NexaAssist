@@ -134,7 +134,9 @@ def test_head_creates_exactly_the_expected_tables(
         "FROM information_schema.tables WHERE table_schema='public'",
     )
 
-    assert tables == "alembic_version,customers,tickets"
+    assert tables == (
+        "alembic_version,customers,document_chunks,documents,tickets"
+    )
 
 
 # --------------------------------------------------------------------------

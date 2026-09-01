@@ -52,7 +52,7 @@ async def test_schema_work_targets_only_the_test_database(engine: AsyncEngine) -
 
 
 def test_truncate_targets_are_literal_and_child_first() -> None:
-    assert DOMAIN_TABLES == ("tickets", "customers")
+    assert DOMAIN_TABLES == ("document_chunks", "documents", "tickets", "customers")
 
 
 # --------------------------------------------------------------------------
@@ -255,6 +255,8 @@ def test_domain_migration_round_trips(test_database_url: str) -> None:
     assert asyncio.run(_public_tables(test_database_url)) == [
         "alembic_version",
         "customers",
+        "document_chunks",
+        "documents",
         "tickets",
     ]
 

@@ -27,7 +27,7 @@ def constraint_names(table: object, kind: type) -> set[str]:
 
 def test_both_models_are_registered_on_the_shared_metadata() -> None:
     """Autogenerate compares against this; an unimported model looks droppable."""
-    assert set(Base.metadata.tables) == {"customers", "tickets"}
+    assert {"customers", "tickets"} <= set(Base.metadata.tables)
 
 
 def test_table_names() -> None:
