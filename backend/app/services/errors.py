@@ -28,3 +28,10 @@ class ReviewItemNotFoundError(NotFoundError):
 
     code = "review_item_not_found"
     message = "The requested review item was not found."
+
+
+class ConversationNotFoundError(NotFoundError):
+    """No conversation exists with the requested identifier."""
+
+    code = "conversation_not_found"
+    message = "The requested conversation was not found."
