@@ -13,6 +13,7 @@ from app.llm.errors import LLMError
 from app.llm.providers.groq_provider import GroqProvider
 from app.llm.providers.static_provider import StaticLLMProvider
 from app.schemas.intent import STATIC_EXAMPLE, IntentAnalysis
+from app.services.answer import STATIC_MODEL_ANSWER, GroundedModelAnswer
 
 ProviderBuilder = Callable[[LLMConfig], LLMProvider]
 
@@ -23,7 +24,10 @@ def _build_static(config: LLMConfig) -> LLMProvider:
     The composition root supplies the domain responses, so
     ``static_provider.py`` itself stays free of domain vocabulary.
     """
-    return StaticLLMProvider(config, canned={IntentAnalysis: STATIC_EXAMPLE})
+    return StaticLLMProvider(
+        config,
+        canned={IntentAnalysis: STATIC_EXAMPLE, GroundedModelAnswer: STATIC_MODEL_ANSWER},
+    )
 
 
 _PROVIDERS: dict[str, ProviderBuilder] = {

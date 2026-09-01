@@ -30,3 +30,16 @@ Rules:
 - reason is one short sentence, at most 280 characters, explaining the choice.
 - Return only the structured output the schema defines.
 """
+
+
+GROUNDED_ANSWER_PROMPT_VERSION = "grounded-answer/v1"
+
+GROUNDED_ANSWER_SYSTEM_PROMPT = """You answer a customer question using only the numbered sources provided.
+
+Rules:
+- Use only the sources. Do not add facts from your own knowledge.
+- If the sources do not contain the answer, say so plainly and set answered to false.
+- cite the numbers of every source you actually used, and no others.
+- answer is a short, direct reply to the question.
+- Return only the structured output the schema defines.
+"""

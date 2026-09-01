@@ -58,11 +58,16 @@ Delivered in three checkpoints.
 - [x] Service layer: `TicketService` owning the transaction boundary, depending
       on a session and neither FastAPI nor a provider SDK
 
-## M5 — RAG + pgvector
+## M5 — RAG + pgvector ✅
 
-- [ ] Document ingestion
-- [ ] pgvector storage and retrieval
-- [ ] Grounded answers with citations
+Delivered in three checkpoints.
+
+- [x] Document ingestion: chunking, embedding, and storage in one transaction
+- [x] pgvector storage and retrieval: `vector(384)` column, HNSW index with the
+      cosine operator class, ranking performed in PostgreSQL
+- [x] Grounded answers with citations: `POST /api/v1/documents/answer`, which
+      answers only from retrieved sources and rebuilds citations from
+      retrieval rather than trusting the model
 
 ## M6 — Tool System
 

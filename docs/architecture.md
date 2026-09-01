@@ -10,6 +10,8 @@ Client (React + TS)  ──HTTP──▶  FastAPI service
                                   ├── GET  /api/v1/health
                                   ├── GET  /api/v1/ready
                                   ├── POST /api/v1/intent/analyze
+                                  ├── POST /api/v1/documents
+                                  ├── POST /api/v1/documents/answer
                                   ├── POST /api/v1/tickets
                                   ├── GET  /api/v1/tickets
                                   ├── GET  /api/v1/tickets/{id}
@@ -410,6 +412,30 @@ resolution, and an unstable sort makes pagination skip or repeat rows.
 
 Responses carry `customer_id`, never the customer object: the relationship is
 `lazy="raise"` and nothing in the contract needs it.
+
+### Retrieval (M5)
+
+```
+POST /api/v1/documents/answer
+  └─ AnswerService
+      ├─ DocumentService.search  ── embed query ─▶ ORDER BY embedding <=> query
+      │                                            (HNSW, vector_cosine_ops)
+      └─ LLMProvider             ── answer strictly from the retrieved spans
+          └─ citations rebuilt from retrieval, not from the model
+```
+
+- **Ranking happens in PostgreSQL.** Pulling rows into Python to sort would
+  bypass the HNSW index entirely.
+- **Cosine, not L2.** The embedding model returns unit-length vectors, so the
+  cosine operator class is the one that matches them.
+- **Embedding width is schema, not settings.** Changing models is a migration;
+  a mismatch is rejected by the database rather than yielding meaningless
+  distances.
+- **No sources means no model call.** Answering anyway would produce the
+  ungrounded response the endpoint exists to avoid.
+- **Citations are rebuilt from retrieval.** The model reports which source
+  numbers it used; titles, ids, and excerpts come from the retrieved rows, so a
+  hallucinated citation cannot reach a reader.
 
 ### Migrations
 

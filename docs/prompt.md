@@ -60,6 +60,17 @@ field's *shape*; it guarantees nothing about its calibration.
 miscategorise, and a confident wrong `billing` is worse for downstream routing
 than an honest `other`.
 
+### `GROUNDED_ANSWER_SYSTEM_PROMPT` — version `grounded-answer/v1`
+
+Answers a question using only numbered sources supplied in the user turn.
+
+- **Output schema:** `GroundedModelAnswer` — `answered`, `answer`,
+  `cited_sources` (source numbers).
+- Citations returned to the caller are rebuilt from the retrieved chunks, never
+  taken from the model, so a hallucinated title cannot reach a reader.
+- When retrieval returns nothing the model is not called at all: an ungrounded
+  answer is the exact failure this endpoint exists to prevent.
+
 ## Tool / function definitions
 
 _None yet — the tool system is M6._
