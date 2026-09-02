@@ -25,10 +25,20 @@ unreasonable. Generous for text, far below anything that threatens the process.
 """
 
 
+MAX_QUESTION_LENGTH = 4_000
+"""Longest question accepted on a socket.
+
+Well inside the frame ceiling, and bounded separately because the two limits
+protect different things: the frame limit protects memory, this one protects
+the model call the question turns into.
+"""
+
+
 class ClientMessageType(StrEnum):
     """What a client may send."""
 
     PING = "ping"
+    ASK = "ask"
 
 
 class ServerMessageType(StrEnum):
@@ -36,6 +46,8 @@ class ServerMessageType(StrEnum):
 
     READY = "ready"
     PONG = "pong"
+    DELTA = "delta"
+    COMPLETE = "complete"
     ERROR = "error"
 
 
@@ -47,7 +59,16 @@ class Ping(BaseModel):
     type: Literal[ClientMessageType.PING]
 
 
-ClientMessage = Annotated[Ping, Field(discriminator="type")]
+class Ask(BaseModel):
+    """A question to answer, streamed back as deltas."""
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    type: Literal[ClientMessageType.ASK]
+    question: str = Field(min_length=1, max_length=MAX_QUESTION_LENGTH)
+
+
+ClientMessage = Annotated[Ping | Ask, Field(discriminator="type")]
 """Every frame the server will accept. Anything else is a protocol error."""
 
 CLIENT_MESSAGE_ADAPTER: TypeAdapter[ClientMessage] = TypeAdapter(ClientMessage)
@@ -78,6 +99,32 @@ class Pong(ServerMessage):
     """The answer to a ping."""
 
     type: Literal[ServerMessageType.PONG] = ServerMessageType.PONG
+
+
+class Delta(ServerMessage):
+    """One fragment of an answer, in order.
+
+    Concatenating every delta of a stream reproduces the answer exactly. A
+    client may render them as they arrive or ignore them entirely and wait for
+    :class:`Complete`.
+    """
+
+    type: Literal[ServerMessageType.DELTA] = ServerMessageType.DELTA
+    text: str
+
+
+class Complete(ServerMessage):
+    """Sent once when a stream ends normally.
+
+    Carries the assembled answer as well as the delta count. That repeats what
+    the deltas already said, and does so deliberately: a client that renders
+    incrementally can reconcile against it, and one that does not can skip the
+    deltas altogether rather than reimplementing the concatenation rule.
+    """
+
+    type: Literal[ServerMessageType.COMPLETE] = ServerMessageType.COMPLETE
+    text: str
+    deltas: int
 
 
 class Error(ServerMessage):

@@ -177,10 +177,22 @@ Delivered in three checkpoints.
 No HTTP surface: M13 specifies none, and the OpenAPI schema is unchanged.
 Live Redis tests skip when no server is reachable, as the database tests do.
 
-## M14 — WebSockets + Realtime
+## M14 — WebSockets + Realtime ✅
 
-- [ ] WebSocket transport
-- [ ] Streaming responses
+Delivered in three checkpoints.
+
+- [x] WebSocket transport: `GET /api/v1/ws`, a typed wire contract that rejects
+      unknown frames at the edge, and a connection registry with a ceiling
+- [x] Streaming responses: a `StreamingLLMProvider` protocol separate from
+      `LLMProvider`, with a real Groq implementation and a deterministic
+      offline one
+- [x] Streamed answers over the socket: `ask` produces ordered `delta` frames
+      and one `complete`, one stream at a time per connection, with every
+      failure reported as a frame rather than raised
+
+No OpenAPI change: FastAPI describes HTTP operations, and a WebSocket route is
+not one — so the contract is stated in `app/realtime/envelope.py` and pinned by
+tests instead. Not the grounded answer path; citations cannot be streamed.
 
 ## M15 — Evaluation Framework
 

@@ -25,8 +25,11 @@ from starlette.websockets import WebSocketState
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
+from app.llm.streaming import StreamingLLMProvider, build_streaming_provider
+from app.realtime.answers import AnswerStreamer
 from app.realtime.connection import Connection, ConnectionRegistry
 from app.realtime.envelope import (
+    Ask,
     ClientMessageType,
     Error,
     Pong,
@@ -69,11 +72,21 @@ def reset_registry() -> None:
     _registry = None
 
 
+def get_streaming_provider() -> StreamingLLMProvider:
+    """The streaming backend this endpoint answers from.
+
+    A dependency so a test substitutes a deterministic provider, exactly as it
+    already substitutes the completion provider and the embedder.
+    """
+    return build_streaming_provider(get_settings())
+
+
 @router.websocket("/ws")
 async def realtime(
     websocket: WebSocket,
     settings: Settings = Depends(get_settings),
     registry: ConnectionRegistry = Depends(get_registry),
+    provider: StreamingLLMProvider = Depends(get_streaming_provider),
 ) -> None:
     """Serve one realtime connection for its lifetime."""
     await websocket.accept()
@@ -85,7 +98,9 @@ async def realtime(
 
     try:
         await connection.send(Ready(connection_id=connection.id))
-        await _serve(connection, websocket, settings)
+        # One streamer per connection: that is the scope the single-flight rule
+        # is defined over.
+        await _serve(connection, websocket, settings, AnswerStreamer(provider))
     except WebSocketDisconnect:
         # The ordinary way a socket ends.
         pass
@@ -99,7 +114,10 @@ async def realtime(
 
 
 async def _serve(
-    connection: Connection, websocket: WebSocket, settings: Settings
+    connection: Connection,
+    websocket: WebSocket,
+    settings: Settings,
+    streamer: AnswerStreamer,
 ) -> None:
     """Read and answer frames until the client goes away."""
     while True:
@@ -130,10 +148,15 @@ async def _serve(
             )
             continue
 
-        await _handle(connection, message)
+        await _handle(connection, message, streamer)
 
 
-async def _handle(connection: Connection, message: object) -> None:
+async def _handle(
+    connection: Connection, message: object, streamer: AnswerStreamer
+) -> None:
     """Dispatch one validated frame."""
+    if isinstance(message, Ask):
+        await streamer.answer(connection, message.question)
+        return
     if getattr(message, "type", None) is ClientMessageType.PING:
         await connection.send(Pong())

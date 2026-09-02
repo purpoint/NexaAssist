@@ -71,6 +71,22 @@ Answers a question using only numbered sources supplied in the user turn.
 - When retrieval returns nothing the model is not called at all: an ungrounded
   answer is the exact failure this endpoint exists to prevent.
 
+### `REALTIME_REPLY_SYSTEM_PROMPT` — version `realtime-reply/v1`
+
+Used by the WebSocket `ask` flow (M14). Unlike the other prompts this one is
+not structured: it produces prose, because the reply is streamed to a person a
+fragment at a time and a schema-validated object is only valid once complete.
+
+It is deliberately *not* the grounded path. `POST /api/v1/documents/answer`
+answers from retrieved sources and rebuilds citations from retrieval; this
+prompt has no sources and makes no citations, so nothing it produces should be
+presented as sourced.
+
+The instruction against promising refunds or credits is defence in depth, not
+the control. The M10 policy engine is what actually prevents a financial
+commitment reaching a customer, and it runs outside the model where a prompt
+cannot talk it round.
+
 ## Tool / function definitions
 
 _None yet — the tool system is M6._

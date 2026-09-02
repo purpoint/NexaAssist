@@ -653,6 +653,52 @@ implementations are only interchangeable if the same statements hold for each.
 - **No HTTP surface.** The roadmap specifies none for M13, and the OpenAPI
   schema is unchanged.
 
+### Realtime (M14)
+
+```
+client ──ws──▶ /api/v1/ws
+                  │  accept ─▶ registry (ceiling) ─▶ Ready
+                  │
+                  ├─ ping  ──────────────────────────▶ Pong
+                  └─ ask   ─▶ AnswerStreamer ─▶ StreamingLLMProvider
+                                   │
+                                   └─▶ Delta … Delta ─▶ Complete   (or Error)
+```
+
+- **Every frame is a validated envelope.** A socket that accepts whatever
+  arrives is an undocumented API that changes shape whenever a caller does —
+  and FastAPI documents HTTP operations, so a WebSocket route never appears in
+  OpenAPI. The contract lives in `app/realtime/envelope.py` and the tests are
+  what pin it; one test records the OpenAPI absence as a known fact.
+- **Inbound frames are a discriminated union with `extra="forbid"`**, so an
+  unknown type is rejected at the edge rather than reaching a handler that
+  quietly does nothing.
+- **Two limits, protecting two different things.** The frame ceiling protects
+  memory; the question length bounds what becomes a model call.
+- **Connections are counted against one registry.** A ceiling only means
+  anything if every connection is counted against the same one, which is why
+  the dependency caches.
+- **One stream at a time per connection.** Otherwise a client could open a
+  single socket and start an unbounded number of concurrent model calls — a
+  cheaper way to exhaust the process than opening connections, which at least
+  are counted.
+- **Failures are frames, not exceptions.** A malformed frame is answered and
+  the connection kept, because a client bug on one message is not a reason to
+  drop the session. A provider failure ends that answer with an `error` frame
+  and no `complete`, since a completion frame would assert a whole answer
+  exists. Only oversize and over-capacity close the socket, with the standard
+  1009 and 1008 codes.
+- **Streaming is a separate protocol from `LLMProvider`.** Not every backend
+  can stream, and structured output pulls the other way: a schema-validated
+  object is only valid once complete, so a stream of partial JSON would be a
+  stream of things that are not yet the thing.
+- **This is not the grounded path.** `POST /api/v1/documents/answer` rebuilds
+  citations from retrieval, and citations can only exist once an answer is
+  whole. What streams here is prose, and nothing it produces is presented as
+  sourced.
+- **The HTTP surface is unchanged.** OpenAPI is byte-identical across all of
+  M14.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
