@@ -91,8 +91,15 @@ class Settings(BaseSettings):
 
     # Which job queue backend to use. "memory" is in-process, deterministic,
     # and offline -- the default, and what the test suite runs on. It is not
-    # durable and is not shared between processes.
-    job_queue: Literal["memory"] = Field(default="memory")
+    # durable and is not shared between processes. "redis" is durable and
+    # shared, and needs REDIS_URL.
+    job_queue: Literal["memory", "redis"] = Field(default="memory")
+    # May carry a password, so it is a secret for the same reason DATABASE_URL
+    # is. Unset is the normal case: the default backend needs no server.
+    redis_url: SecretStr | None = Field(default=None)
+    # Keys are namespaced so one Redis server can safely host more than one
+    # application. Nothing outside this prefix is ever read or written.
+    redis_namespace: str = Field(default="nexaassist:jobs", min_length=1)
     # How many times a job may be dequeued before it is dead-lettered rather
     # than retried. Counts attempts, not retries: 1 means "never retry".
     job_max_attempts: int = Field(default=3, ge=1, le=20)
@@ -120,7 +127,9 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("llm_api_key", "llm_temperature", "database_url", mode="before")
+    @field_validator(
+        "llm_api_key", "llm_temperature", "database_url", "redis_url", mode="before"
+    )
     @classmethod
     def _empty_to_none(cls, value: object) -> object:
         """Treat a blank environment value as unset.
@@ -150,6 +159,18 @@ class Settings(BaseSettings):
                 "DATABASE_URL must use the postgresql+asyncpg driver, "
                 f"got {scheme!r}."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _redis_backend_needs_a_url(self) -> Self:
+        """Fail at startup rather than on the first job.
+
+        Selecting the redis backend without a URL is a misconfiguration, and
+        the useful moment to say so is while the operator is still looking at
+        the deploy -- not hours later when something tries to enqueue.
+        """
+        if self.job_queue == "redis" and self.redis_url is None:
+            raise ValueError("JOB_QUEUE=redis requires REDIS_URL to be set.")
         return self
 
     @model_validator(mode="after")
