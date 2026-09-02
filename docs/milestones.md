@@ -160,10 +160,22 @@ Delivered in three checkpoints.
 - [x] Context window management: recency-first selection that never exceeds the
       budget, truncating the newest turn rather than dropping the question
 
-## M13 — Redis + Background Jobs
+## M13 — Redis + Background Jobs ✅
 
-- [ ] Redis integration
-- [ ] Background job execution
+Delivered in three checkpoints.
+
+- [x] Job queue interface and a deterministic in-memory backend: a `JobQueue`
+      protocol with validation shared by every implementation, so a payload
+      that works offline cannot fail against a server
+- [x] Redis integration: a second backend behind the same protocol, durable
+      and shared, with at-least-once handoff via `LMOVE` and every key confined
+      to one namespace
+- [x] Background job execution: an explicit handler registry, a worker that
+      lets no handler exception escape, and concrete handlers over the existing
+      document and ticket services
+
+No HTTP surface: M13 specifies none, and the OpenAPI schema is unchanged.
+Live Redis tests skip when no server is reachable, as the database tests do.
 
 ## M14 — WebSockets + Realtime
 

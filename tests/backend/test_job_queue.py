@@ -249,6 +249,29 @@ async def test_a_job_is_retried_exactly_max_attempts_times(
 
 
 @pytest.mark.anyio
+async def test_a_non_retryable_failure_dead_letters_with_attempts_to_spare(
+    queue: InMemoryJobQueue,
+) -> None:
+    """Some failures are settled on the first attempt.
+
+    Spending the remaining budget on a job that cannot succeed only delays the
+    dead-letter and buries the real cause under repeats.
+    """
+    await queue.enqueue("work", max_attempts=5)
+    dead = await queue.fail(await queue.dequeue(), "malformed", retryable=False)
+    assert dead.status is JobStatus.FAILED
+    assert dead.attempts == 1
+    assert await queue.depth() == 0
+    assert [job.id for job in await queue.dead_lettered()] == [dead.id]
+
+
+@pytest.mark.anyio
+async def test_failures_are_retryable_by_default(queue: InMemoryJobQueue) -> None:
+    await queue.enqueue("work", max_attempts=5)
+    assert (await queue.fail(await queue.dequeue(), "boom")).status is JobStatus.PENDING
+
+
+@pytest.mark.anyio
 async def test_an_unknown_job_id_is_not_found(queue: InMemoryJobQueue) -> None:
     with pytest.raises(JobNotFoundError):
         await queue.get("nope")

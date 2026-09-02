@@ -1,8 +1,12 @@
-"""Job queue registry and dependency.
+"""Job queue and handler assembly.
 
 Adding a backend means one entry here and one option on
 ``Settings.job_queue``; a test asserts the two stay in step, the same way the
 embedding provider registry is kept honest.
+
+The handler registry is built the same way the tool registry is: one readable
+list, assembled from already-constructed services, rather than discovered by
+import. What the system will do unattended should be inspectable in one place.
 """
 
 from collections.abc import Callable
@@ -11,7 +15,11 @@ from functools import lru_cache
 from app.core.config import Settings, get_settings
 from app.jobs.base import JobQueue
 from app.jobs.memory import InMemoryJobQueue
+from app.jobs.domain import CreateTicketHandler, IngestDocumentHandler
+from app.jobs.handlers import JobHandlerRegistry
 from app.jobs.redis_queue import RedisJobQueue
+from app.services.document import DocumentService
+from app.services.ticket import TicketService
 
 
 def _build_redis(settings: Settings) -> JobQueue:
@@ -49,3 +57,17 @@ def get_job_queue() -> JobQueue:
     one per call would hand every caller an empty queue and silently lose work.
     """
     return _default_queue()
+
+
+def build_handler_registry(
+    *, documents: DocumentService, tickets: TicketService
+) -> JobHandlerRegistry:
+    """Assemble the handlers a worker can dispatch to.
+
+    Takes services rather than a session: the caller owns the session's
+    lifecycle, exactly as a request does.
+    """
+    registry = JobHandlerRegistry()
+    registry.register(IngestDocumentHandler(documents))
+    registry.register(CreateTicketHandler(tickets))
+    return registry

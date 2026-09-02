@@ -140,10 +140,10 @@ class RedisJobQueue:
         logger.info("job succeeded id=%s name=%s", done.id, done.name)
         return done
 
-    async def fail(self, job: Job, error: str) -> Job:
+    async def fail(self, job: Job, error: str, *, retryable: bool = True) -> Job:
         stored = await self.get(job.id)
 
-        if stored.exhausted:
+        if stored.exhausted or not retryable:
             dead = stored.model_copy(update={"status": JobStatus.FAILED, "error": error})
             async with self._guard():
                 pipe = self._redis.pipeline()

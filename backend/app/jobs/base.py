@@ -109,12 +109,18 @@ class JobQueue(Protocol):
         """Record that a job finished successfully."""
         ...
 
-    async def fail(self, job: Job, error: str) -> Job:
+    async def fail(self, job: Job, error: str, *, retryable: bool = True) -> Job:
         """Record a failed attempt.
 
         Re-queues the job when attempts remain, and dead-letters it when they
         do not. Which of the two happened is visible in the returned status, so
         a caller never has to recompute the retry arithmetic itself.
+
+        ``retryable=False`` dead-letters immediately regardless of the budget.
+        Some failures are settled on the first attempt -- an unregistered
+        handler or a payload that does not match its schema will fail the same
+        way every time, and spending the remaining attempts on them only
+        delays the dead-letter and hides the real cause behind repeats.
         """
         ...
 

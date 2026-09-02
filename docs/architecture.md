@@ -603,6 +603,56 @@ conversations 1 ──< conversation_messages (position, role, content, token_es
   one is dropped whole, because a fragment of old context is worth less than
   the space it costs.
 
+### Background jobs (M13)
+
+```
+caller ─▶ JobQueue.enqueue ─▶ [ pending ] ─▶ JobWorker.dequeue
+                                                   │
+                                    JobHandlerRegistry.get(job.name)
+                                                   │
+                                 validate payload ─┴─▶ handler.run ─▶ service
+                                                   │
+                        complete ◀── ok ── outcome ── failed ──▶ retry | dead-letter
+```
+
+Two backends behind one `JobQueue` protocol: `InMemoryJobQueue` is
+deterministic, offline, and the default, and `RedisJobQueue` is durable and
+shared. The same contract tests are written against both — two
+implementations are only interchangeable if the same statements hold for each.
+
+- **Validation is shared, not per backend.** A payload must survive a JSON
+  round trip *unchanged*, which is stricter than `json.dumps` alone: a tuple
+  serialises fine and returns as a list, so accepting one would mean the
+  in-memory queue held a different value than Redis would return for the same
+  job. Checking it in one place is what stops "works in tests, fails in
+  production".
+- **Jobs carry no timestamps.** Ordering belongs to the queue. A clock inside
+  the value would make every comparison depend on when it ran.
+- **Handoff is at-least-once.** `dequeue` uses Redis `LMOVE` to shift the id
+  from `pending` to `processing` in one server-side operation, so a worker that
+  dies mid-job leaves the id visible rather than dropping it. Reclaiming
+  stranded ids needs a lease clock and an owner, and is not implemented — what
+  matters here is that the id is still there to reclaim.
+- **Keys are namespaced.** A Redis server is far likelier to be shared between
+  projects than a database is. Tests run on database index 15 under a
+  `nexaassist:test:` prefix and clean up by scanning it; nothing ever calls
+  `FLUSHDB`.
+- **Retryable and permanent failures are different.** An unregistered handler
+  or a payload that does not match its schema will fail identically every time,
+  so both dead-letter on the first attempt. Spending the remaining budget on
+  them only delays the outcome and buries the cause under repeats.
+- **An unexpected exception is retried**, unlike in the tool executor. The
+  usual cause of one in background work is a dependency that was briefly
+  unavailable, and the attempt budget already bounds how long that can go on.
+- **`drain` is bounded.** A re-queued job lands back in the same queue the loop
+  is reading, so an unbounded drain against a permanently failing job would
+  spin until its attempts ran out with no way to regain control.
+- **Handlers do not touch the session.** The service already owns the
+  transaction boundary; a handler that also committed would be a second opinion
+  about a boundary that has an owner.
+- **No HTTP surface.** The roadmap specifies none for M13, and the OpenAPI
+  schema is unchanged.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
@@ -634,7 +684,6 @@ _None of these exist yet; listed so the module map above has a rationale._
 - Agent orchestration layer
 - Retrieval / knowledge layer
 - Relational persistence
-- Caching and background jobs
 - Authentication and tenancy
 - Workflow definition and execution engine
 

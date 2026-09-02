@@ -115,6 +115,18 @@ async def test_a_job_is_retried_exactly_max_attempts_times(
     assert len(await queue.dead_lettered()) == 1
 
 
+async def test_a_non_retryable_failure_dead_letters_with_attempts_to_spare(
+    queue: RedisJobQueue, client: Redis
+) -> None:
+    await queue.enqueue("work", max_attempts=5)
+    dead = await queue.fail(await queue.dequeue(), "malformed", retryable=False)
+    assert dead.status is JobStatus.FAILED
+    assert dead.attempts == 1
+    assert await queue.depth() == 0
+    assert await client.lrange(f"{TEST_NAMESPACE}:processing", 0, -1) == []
+    assert [job.id for job in await queue.dead_lettered()] == [dead.id]
+
+
 async def test_an_unknown_job_id_is_not_found(queue: RedisJobQueue) -> None:
     with pytest.raises(JobNotFoundError):
         await queue.get("nope")
