@@ -3,8 +3,9 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 pydantic-settings>=2.4,<3.0
-# Official Groq SDK: the only module that may import it is
-# app/llm/providers/groq_provider.py.
+# Official Groq SDK: the only modules that may import it are
+# app/llm/providers/groq_provider.py and app/llm/providers/groq_streaming.py.
+# Enforced by a test, not just by this comment.
 groq>=1.7,<2.0
 # Persistence. The async driver is required: the app is async end to end, and
 # a sync driver would block the event loop.

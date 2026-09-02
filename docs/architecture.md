@@ -235,7 +235,7 @@ POST /api/v1/intent/analyze
   └─ api/v1/intent.py      validate request, call service, return  (no logic)
       └─ IntentService     compose prompt + schema, unwrap result
           └─ LLMProvider   protocol -- the service knows nothing else
-              └─ GroqProvider     the only module importing the SDK
+              └─ GroqProvider     one of two modules importing the SDK
                   └─ Groq structured JSON output
                       └─ IntentAnalysis (validated by Pydantic)
                           └─ API response
