@@ -89,6 +89,14 @@ class Settings(BaseSettings):
     agent_max_steps: int = Field(default=6, ge=1, le=50)
     agent_max_tool_calls: int = Field(default=8, ge=0, le=100)
 
+    # Which job queue backend to use. "memory" is in-process, deterministic,
+    # and offline -- the default, and what the test suite runs on. It is not
+    # durable and is not shared between processes.
+    job_queue: Literal["memory"] = Field(default="memory")
+    # How many times a job may be dequeued before it is dead-lettered rather
+    # than retried. Counts attempts, not retries: 1 means "never retry".
+    job_max_attempts: int = Field(default=3, ge=1, le=20)
+
     # Below this self-reported confidence a classification is treated as
     # ambiguous and sent to the fallback instead of a specialised handler.
     # Self-reported, not calibrated -- see docs/prompt.md -- so this is a
