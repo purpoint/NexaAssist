@@ -91,6 +91,18 @@ cannot talk it round.
 
 _None yet — the tool system is M6._
 
+## Versioning is enforced
+
+`ALL_PROMPTS` in `app/llm/prompts.py` pairs every prompt with its version, and
+the M15 regression suite pins each version to a digest of its text. Editing a
+prompt without bumping its version fails
+`tests/backend/test_evaluation_regression.py`.
+
+The fix is always the same, and all three parts belong in one commit: bump the
+version constant, mirror the new text into this file, and repin the digest. A
+version that no longer identifies the text it names makes every log line
+attributing output to a prompt version a lie.
+
 ## Evaluation
 
 _None yet — the evaluation framework is M15. Until it exists, prompt changes

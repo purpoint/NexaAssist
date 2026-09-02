@@ -699,6 +699,49 @@ client ──ws──▶ /api/v1/ws
 - **The HTTP surface is unchanged.** OpenAPI is byte-identical across all of
   M14.
 
+### Evaluation (M15)
+
+```
+EvalSuite (cases) ─▶ EvaluationRunner ─▶ EvalTarget ─▶ output
+                          │                                │
+                          └────── Check … Check ◀──────────┘
+                                       │
+                                  EvalReport ─▶ compare_reports ─▶ regressions
+```
+
+- **A case records expectations, not an expected output.** Storing a whole
+  response makes a suite a change detector: any reword fails it, so it gets
+  updated until nobody reads the diff and it stops detecting anything.
+- **Checks are pure functions** of the case and the output — no provider, no
+  database, no clock — the same rule the M10 policy engine follows. A verdict
+  that varies run to run cannot decide whether a change made things worse.
+  They are also shallow by design: each answers a question about structure or
+  containment, never about meaning.
+- **A case passes only if every check passed**, and a check whose expectation
+  the case never declared fails rather than passing vacuously. Both exist to
+  stop a suite going quietly hollow.
+- **Three outcomes stay three outcomes.** A target that raised, a check that
+  raised, and a check that returned "failed" are distinct in the report;
+  collapsing them would make a broken harness look like a failing model.
+- **A pass rate is not a regression report.** Two runs can score identically
+  while failing on different cases, so `compare_reports` names what stopped
+  passing — and reports cases present in only one run, since a comparison that
+  ignored them would call a suite that stopped asking "clean".
+- **What is evaluated offline, and what is not.** The shipped suites cover the
+  deterministic layers, policy and escalation, where a different input really
+  does have a different expected output. There is deliberately no offline suite
+  over intent classification or grounded answers: `StaticLLMProvider` returns
+  one canned response per schema regardless of input, so such a suite would be
+  every case expecting the same answer and would pass whatever the prompt said.
+- **The model-facing guard is the prompt digest pin.** Each prompt version is
+  pinned to a digest of its text, so prompt text cannot change without its
+  version changing — a version that no longer identifies the text it names
+  makes every log line attributing output to a prompt version a lie. Judging
+  the model itself needs a real provider and a live key, which is an operator
+  action rather than a test.
+- **No tolerance on the shipped suites.** They run deterministic targets, and a
+  threshold below 100% is a licence for a real break to hide under it.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

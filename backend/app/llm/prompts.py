@@ -73,3 +73,21 @@ Rules:
 - If you do not know, say so plainly rather than guessing.
 - Do not promise refunds, credits, or any other commitment on the company's behalf.
 """
+
+
+ALL_PROMPTS: tuple[tuple[str, str], ...] = (
+    (INTENT_PROMPT_VERSION, INTENT_SYSTEM_PROMPT),
+    (GROUNDED_ANSWER_PROMPT_VERSION, GROUNDED_ANSWER_SYSTEM_PROMPT),
+    (AGENT_PROMPT_VERSION, AGENT_SYSTEM_PROMPT),
+    (REALTIME_REPLY_PROMPT_VERSION, REALTIME_REPLY_SYSTEM_PROMPT),
+)
+"""Every prompt, paired with its version.
+
+Machine-readable so the regression suite can pin each version to a digest of
+its text. Editing a prompt without bumping its version then fails a test rather
+than shipping quietly -- which is the whole point of versioning them, and the
+part a convention alone never enforced.
+
+A new prompt must be added here. The suite checks the count, so forgetting is
+also a failure.
+"""

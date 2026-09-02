@@ -194,10 +194,23 @@ No OpenAPI change: FastAPI describes HTTP operations, and a WebSocket route is
 not one — so the contract is stated in `app/realtime/envelope.py` and pinned by
 tests instead. Not the grounded answer path; citations cannot be streamed.
 
-## M15 — Evaluation Framework
+## M15 — Evaluation Framework ✅
 
-- [ ] Prompt and workflow evaluation harness
-- [ ] Regression suite for model-facing changes
+Delivered in three checkpoints.
+
+- [x] Cases, checks, and reports: expectations rather than recorded outputs,
+      checks that are pure functions, and a case that passes only when every
+      check did
+- [x] The harness: runs a suite against an `EvalTarget`, lets nothing escape,
+      keeps a failed target and a broken check distinct, and compares two runs
+      to name what stopped passing
+- [x] The shipped regression suite: the deterministic policy and escalation
+      layers evaluated end to end, plus prompt digests pinned to their versions
+
+Deliberately no offline suite over model output: the static provider returns one
+canned response per schema, so such a suite would pass whatever the prompt said.
+The model-facing guard is the digest pin; judging the model needs a real
+provider and is an operator action.
 
 ## M16 — Observability + Cost Tracking
 
