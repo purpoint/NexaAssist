@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     # than retried. Counts attempts, not retries: 1 means "never retry".
     job_max_attempts: int = Field(default=3, ge=1, le=20)
 
+    # How many realtime connections the process will hold at once. A
+    # long-lived socket is a resource kept until a client leaves, so the number
+    # held should be a decision rather than however many happen to arrive.
+    realtime_max_connections: int = Field(default=100, ge=1, le=10_000)
+    # Largest frame accepted from a client. An unbounded frame is a
+    # memory-exhaustion vector: the server buffers it before it can judge it.
+    realtime_max_message_bytes: int = Field(default=65_536, ge=1_024, le=1_048_576)
+
     # Below this self-reported confidence a classification is treated as
     # ambiguous and sent to the fallback instead of a specialised handler.
     # Self-reported, not calibrated -- see docs/prompt.md -- so this is a
