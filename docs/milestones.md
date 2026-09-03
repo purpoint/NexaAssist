@@ -259,43 +259,113 @@ Delivered in three checkpoints.
       for consistency across both transports, CORS verified, and the error
       contract held to one shape
 
-_Scoped to the backend contract. The **React application is deferred**: this
-milestone makes the backend consumable rather than consuming it, and no
-frontend dependency was installed._
+_Scoped to the backend contract: this milestone makes the backend consumable
+rather than consuming it, and installed no frontend dependency. The **React
+application was deferred out of it and shipped as M21**._
 
-**Still open, moved out of M18:**
+## M19 — Production Hardening ✅
 
-- [ ] Remove the deprecated `/api/health` alias and `ENABLE_LEGACY_HEALTH_ROUTE`
-      _(originally M2, then M18; deferred again — it is a breaking change to an
-      M1 contract and there is still no real consumer to break)_
-- [ ] Install frontend dependencies
-- [ ] Application shell and routing
-- [ ] Typed API client wired to the backend
+Delivered in three checkpoints. This is the security hardening the roadmap
+first scheduled for M17 and then deferred; it is no longer a separate
+milestone.
 
-## M18b — Security Hardening (moved from M17)
+- [x] Authentication and request identity: an `Authenticator` protocol with a
+      shared-key implementation and an anonymous one, a single `RequestIdentity`
+      type rather than `Identity | None`, and refusals that never distinguish a
+      missing credential from a wrong one
+- [x] Authorization and resource ownership: an `OwnerScope` holding the one
+      definition of "owns", ownership on conversations and tickets, and another
+      subject's resource returning the same 404 as one that does not exist
+- [x] Rate limiting: a backend-neutral `RateLimiter` with none/memory/redis
+      implementations, keyed by the authenticated subject, reusing the existing
+      Redis configuration
 
-- [ ] Authentication
-- [ ] Authorization and tenant isolation
+**Both authentication and authorization are off by default**, so a deployment
+that has not opted in behaves exactly as it did before. One Alembic revision
+(`5aa59ba365ee`) adds a nullable `owner_subject` to `conversations` and
+`tickets`.
 
-_The API shipped in M17 is unauthenticated. This is the milestone that changes
-that, and nothing before it should be treated as access-controlled._
+**Known limitation:** the WebSocket carries no identity. Under scoped
+authorization it refuses to record a turn rather than writing unscoped, and the
+client falls back to HTTP. Authenticating the socket needs a credential
+transport a browser can use — see _Outstanding_ below.
 
-## M19 — Docker / Production-like Environment
+## M20 — Observability and Operations ✅
+
+Delivered in three checkpoints, extending M16 rather than replacing it.
+
+- [x] Application metrics: a vendor-neutral protocol, label values that cannot
+      carry prose, and a per-metric cardinality cap, recorded at the seams M16
+      already wraps
+- [x] Operational health diagnostics: a `components` report on `/ready` covering
+      the database, job queue, model provider, rate limiter and authentication,
+      with `degraded` distinct from `unavailable` — only the database can make
+      the service unready
+- [x] Observability hardening: a trace id on every log record, configured
+      credentials registered as literals to scrub, and validation errors no
+      longer echoing the request
+
+`/health` is unchanged. Validation errors returning `ErrorResponse` instead of
+FastAPI's default body is a **deliberate contract change**: the default embeds
+the offending input, so a malformed request returned the customer's message
+back to them.
+
+## M21 — Frontend ✅
+
+Delivered in three checkpoints. This is the React application deferred out of
+M18.
+
+- [x] Foundation: the backend contract transcribed as TypeScript, a typed API
+      client that returns data or throws one error type, an application shell,
+      and a connection indicator driven by `/ready`
+- [x] Assistant conversation experience: transcript, composer, citations,
+      history and resumption, with optimistic sending and a failed question
+      kept on screen rather than discarded
+- [x] Realtime: the M14 frame vocabulary exactly, backoff that stops, streamed
+      deltas, and an HTTP fallback whenever the socket cannot take a question
+
+48 frontend tests; `tsc --noEmit` and a production build pass.
+
+**What it is not:** there is one screen and no router, so "routing" in the
+original M18 wording is unbuilt — nothing yet needs a second route. There is no
+UI for supplying an API key; the client sends one only when built with it
+configured, which is enough for the default open deployment and not enough once
+M19's authentication is switched on.
+
+## M22 — Docker / Production-like Environment
 
 - [ ] Container images
 - [ ] Local production-like compose environment
 
-## M20 — CI/CD + Deployment
+## M23 — CI/CD + Deployment
 
 - [ ] CI pipeline
 - [ ] Deployment
 
-## M21 — Documentation
+## M24 — Documentation
 
 - [ ] Architecture and operations documentation
 - [ ] API reference
 
-## M22 — Resume + Interview Preparation
+## M25 — Resume + Interview Preparation
 
 - [ ] Project write-up
 - [ ] Architecture walkthrough
+
+## Outstanding
+
+Carried between milestones rather than belonging to one. Listed here so they
+are visible instead of buried in the milestone that last deferred them.
+
+- [ ] **Remove the deprecated `/api/health` alias and
+      `ENABLE_LEGACY_HEALTH_ROUTE`.** Originally M2, then M18, then deferred
+      again for want of a real consumer. M21 shipped one, and it does not use
+      the alias — so the reason to keep waiting has gone.
+- [ ] **Authenticate the WebSocket.** A browser cannot set a header on a
+      WebSocket handshake, so this needs a decision about the credential
+      transport (a subprotocol, a first-frame handshake, or a short-lived
+      ticket) before it can be built.
+- [ ] **An API-key entry point in the frontend.** Needed before M19
+      authentication can be enabled for a browser client.
+- [ ] **`docs/architecture.md` has no M19–M21 sections.** Every milestone
+      through M18 records its design decisions there; these three do not yet.
