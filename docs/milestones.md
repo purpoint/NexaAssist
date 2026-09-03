@@ -8,6 +8,8 @@ Scope is intentionally narrow so nothing is built speculatively.
 - Directory structure for backend, frontend, docs, and tests
 - `.gitignore`, `.env.example`, root `README.md`
 - FastAPI application factory with a single `/api/health` endpoint
+  _(superseded by `/api/v1/health` in M1, and removed after M21 once a real
+  consumer existed and did not use it)_
 - Environment-driven settings
 - React + TypeScript project scaffolding (structure and config only, no UI)
 - Backend test covering the health endpoint
@@ -17,6 +19,7 @@ Scope is intentionally narrow so nothing is built speculatively.
 - [x] API versioning: v1 router tree mounted at `/api/v1`
 - [x] Health endpoint moved to `app/api/v1/health.py`
 - [x] `/api/health` preserved as a deprecated, config-gated alias
+      _(removed after M21; see the note under M0)_
 - [x] `AppError` foundation and consistent `ErrorResponse` error bodies
 - [x] Standard-library logging configuration
 - [x] Tests for v1 health, the legacy alias, app creation, and 404 handling
@@ -357,10 +360,6 @@ M19's authentication is switched on.
 Carried between milestones rather than belonging to one. Listed here so they
 are visible instead of buried in the milestone that last deferred them.
 
-- [ ] **Remove the deprecated `/api/health` alias and
-      `ENABLE_LEGACY_HEALTH_ROUTE`.** Originally M2, then M18, then deferred
-      again for want of a real consumer. M21 shipped one, and it does not use
-      the alias — so the reason to keep waiting has gone.
 - [ ] **Authenticate the WebSocket.** A browser cannot set a header on a
       WebSocket handshake, so this needs a decision about the credential
       transport (a subprotocol, a first-frame handshake, or a short-lived

@@ -245,7 +245,7 @@ def test_an_error_body_carries_no_internals(client: TestClient) -> None:
 
 def test_every_earlier_endpoint_still_answers(client: TestClient) -> None:
     assert client.get("/api/v1/health").status_code == 200
-    assert client.get("/api/health").status_code == 200
+    assert client.get("/api/health").status_code == 404  # removed alias
     assert client.get("/api/v1/ready").status_code == 200
     assert client.post("/api/v1/intent/analyze", json={"message": "hi"}).status_code == 200
     assert client.get("/api/v1/tickets").status_code == 200

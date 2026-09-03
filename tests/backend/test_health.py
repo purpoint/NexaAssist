@@ -1,8 +1,14 @@
-"""Health endpoint: the versioned route and its deprecated pre-v1 alias."""
+"""Health endpoint, and the absence of the pre-v1 alias it used to have.
+
+The alias was removed once a real consumer existed and did not use it. These
+guards are the removal's premise tests, updated rather than deleted: they now
+pin that it is gone and that the setting which gated it cannot come back by
+accident.
+"""
 
 from fastapi.testclient import TestClient
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.main import create_app
 
 
@@ -17,29 +23,28 @@ def test_v1_health_returns_ok(client: TestClient, settings: Settings) -> None:
     assert body["version"]
 
 
-def test_legacy_health_matches_v1(client: TestClient, settings: Settings) -> None:
-    """The pre-v1 alias stays behaviourally identical while it exists."""
-    legacy = client.get(f"{settings.api_prefix}/health")
-    versioned = client.get(f"{settings.api_v1_prefix}/health")
-
-    assert legacy.status_code == 200
-    assert legacy.json() == versioned.json()
+def test_the_pre_v1_alias_is_gone(client: TestClient, settings: Settings) -> None:
+    """It answered from M0 to M21; the versioned route is the only one now."""
+    assert client.get(f"{settings.api_prefix}/health").status_code == 404
+    assert client.get(f"{settings.api_v1_prefix}/health").status_code == 200
 
 
-def test_legacy_health_is_marked_deprecated(client: TestClient, settings: Settings) -> None:
-    schema = client.get("/openapi.json").json()
+def test_the_alias_is_absent_from_the_document(
+    client: TestClient, settings: Settings
+) -> None:
+    """Removed, not merely hidden -- a deprecated entry would still be a promise."""
+    paths = client.get("/openapi.json").json()["paths"]
 
-    legacy = schema["paths"][f"{settings.api_prefix}/health"]["get"]
-    versioned = schema["paths"][f"{settings.api_v1_prefix}/health"]["get"]
-
-    assert legacy["deprecated"] is True
-    assert versioned.get("deprecated", False) is False
+    assert f"{settings.api_prefix}/health" not in paths
+    assert paths[f"{settings.api_v1_prefix}/health"]["get"].get("deprecated", False) is False
 
 
-def test_legacy_health_can_be_disabled() -> None:
-    """Removing the alias is a config change, not a code change."""
-    settings = get_settings().model_copy(update={"enable_legacy_health_route": False})
+def test_the_gate_that_served_it_is_gone() -> None:
+    """Leaving the setting behind would invite the route back with it."""
+    assert "enable_legacy_health_route" not in Settings.model_fields
 
-    with TestClient(create_app(settings)) as client:
-        assert client.get(f"{settings.api_prefix}/health").status_code == 404
-        assert client.get(f"{settings.api_v1_prefix}/health").status_code == 200
+    # Still accepted as input and ignored, because `extra="ignore"` is the
+    # configured behaviour: an operator with the old variable still in their
+    # environment gets a service that starts, not one that refuses to.
+    with TestClient(create_app(Settings())) as client:
+        assert client.get("/api/health").status_code == 404

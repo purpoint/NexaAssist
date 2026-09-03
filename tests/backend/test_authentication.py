@@ -330,7 +330,7 @@ def test_health_and_readiness_stay_open() -> None:
     """Liveness must answer without a credential, or nothing can probe it."""
     with protected_client() as client:
         assert client.get("/api/v1/health").status_code == 200
-        assert client.get("/api/health").status_code == 200
+        assert client.get("/api/health").status_code == 404  # removed alias
         assert client.get("/api/v1/ready").status_code in (200, 503)
         assert client.get("/openapi.json").status_code == 200
 

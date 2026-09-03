@@ -32,9 +32,6 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000)
     api_prefix: str = Field(default="/api")
 
-    # Pre-v1 alias for the health endpoint. Deprecated; see docs/architecture.md.
-    enable_legacy_health_route: bool = Field(default=True)
-
     log_level: str = Field(default="INFO")
 
     # ``NoDecode`` is load-bearing, not decoration. Without it

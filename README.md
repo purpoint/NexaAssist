@@ -11,7 +11,7 @@ Agentic Customer Support & Workflow Automation Platform.
 ## API
 
 Routes are versioned: version 1 is served under `/api/v1`. The pre-v1
-`/api/health` alias still responds but is deprecated — see
+`/api/health` alias has been removed — see
 [`docs/architecture.md`](docs/architecture.md#api-versioning).
 
 ## Repository layout

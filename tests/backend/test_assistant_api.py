@@ -259,5 +259,5 @@ def test_the_service_value_and_the_response_are_separate_types() -> None:
 def test_health_and_readiness_are_untouched() -> None:
     with client_with(service_of()) as client:
         assert client.get("/api/v1/health").status_code == 200
-        assert client.get("/api/health").status_code == 200
+        assert client.get("/api/health").status_code == 404  # removed alias
         assert client.get("/api/v1/ready").status_code in (200, 503)

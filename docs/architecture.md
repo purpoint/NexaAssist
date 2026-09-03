@@ -20,8 +20,7 @@ Client (React + TS)  ──HTTP──▶  FastAPI service
        │                          ├── POST /api/v1/assistant/messages
        │                          ├── POST /api/v1/conversations
        │                          ├── GET  /api/v1/conversations/{id}
-       │                          ├── GET  /api/v1/conversations/{id}/messages
-       │                          └── GET  /api/health   (deprecated alias)
+       │                          └── GET  /api/v1/conversations/{id}/messages
        │
        └────ws────▶  GET /api/v1/ws   (not described by OpenAPI)
 ```
@@ -42,20 +41,27 @@ hardcodes the version segment.
 A breaking change to a published route means adding an `app/api/v2/` package
 and running both versions, not editing v1 in place.
 
-### Deprecation: `/api/health`
+### Removed: `/api/health`
 
-The pre-versioning `/api/health` endpoint from milestone M0 is still served. It
-shares the same router as `/api/v1/health`, so the two are behaviourally
-identical, and a test asserts that they stay identical.
+The pre-versioning alias from M0 is gone, along with
+`ENABLE_LEGACY_HEALTH_ROUTE`. `/api/v1/health` is the only health route.
 
-- It is flagged `deprecated: true` in the OpenAPI schema and renders
-  struck-through in `/docs`.
-- It is gated by `ENABLE_LEGACY_HEALTH_ROUTE` (default `true`). Set it to
-  `false` to confirm nothing still depends on it.
-- **Still to be removed**, along with the setting and its tests. Scheduled for
-  M2, then M18, and deferred both times for want of a real API consumer. M21
-  shipped one and it does not use the alias, so the reason to keep waiting has
-  gone; it is tracked under _Outstanding_ in `docs/milestones.md`.
+It was scheduled for removal in M2, then M18, and deferred both times for the
+same honest reason: there was no real API consumer, so nothing could confirm
+the alias was unused and nothing would have noticed it going. M21 shipped a
+consumer, it never referenced the alias, and the reason to keep waiting went
+with it.
+
+Removed rather than left deprecated. A path in the document is a promise
+whatever flag it carries, and a deprecation that never ends is just a longer
+promise. The setting went too — leaving it would have invited the route back
+with it — though an operator with the old variable still exported gets a
+service that starts and ignores it, because `Settings` is configured
+`extra="ignore"`.
+
+The guards that used to assert the alias worked now assert it is gone: it 404s,
+it is absent from the OpenAPI document, and the setting is absent from
+`Settings`. Putting the route back fails eight tests.
 
 ## Error handling
 

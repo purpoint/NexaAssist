@@ -13,7 +13,8 @@ from app.schemas.assistant import AssistantMessageResponse
 from app.schemas.common import ErrorResponse
 
 EXPECTED_PATHS = {
-    "/api/health",
+    # "/api/health" was the pre-v1 alias, removed once a real consumer existed
+    # and did not use it.
     "/api/v1/health",
     "/api/v1/ready",
     "/api/v1/intent/analyze",
@@ -39,9 +40,9 @@ def test_the_published_paths_are_exactly_these(spec: dict) -> None:
     assert set(spec["paths"]) == EXPECTED_PATHS
 
 
-def test_the_pre_v1_health_alias_is_still_served_and_deprecated(spec: dict) -> None:
-    """Scheduled for removal, but not yet -- M18 is contract work only."""
-    assert spec["paths"]["/api/health"]["get"]["deprecated"] is True
+def test_the_pre_v1_health_alias_is_gone(spec: dict) -> None:
+    """Removed rather than left deprecated: a documented path is a promise."""
+    assert "/api/health" not in spec["paths"]
 
 
 def test_every_operation_has_a_summary(spec: dict) -> None:
