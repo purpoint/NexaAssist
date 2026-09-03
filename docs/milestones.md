@@ -341,20 +341,32 @@ ticket and spends that on the connection. The key never reaches a socket URL,
 and a realtime turn is now recorded under the same ownership rules as an HTTP
 one.
 
-## M22 — Docker / Production-like Environment
+## M22 — Docker / Production-like Environment ✅
 
-- [ ] Container images
-- [ ] Local production-like compose environment
+- [x] Container images — two-stage, non-root, lock-file installs, no secret in
+      the image or its layer history, and nothing migrating on boot
+- [x] Local production-like compose environment — backend, client, PostgreSQL
+      and Redis; migrations behind a profile; the data stores publish no ports
+- [x] Hardening — a `.dockerignore` per context, image-level healthchecks and
+      OCI labels, and smoke tests that build the images and look inside them
 
-## M23 — CI/CD + Deployment
+## M23 — CI/CD + Deployment ✅
 
-- [ ] CI pipeline
-- [ ] Deployment
+- [x] CI pipeline — the fast suites on every push, and a second workflow for
+      what needs real PostgreSQL, Redis and a running stack
+- [x] Hardening — actions pinned to commits, a read-only token, superseded
+      runs cancelled, the declared Python floor actually tested, and a secret
+      scan that runs before a push rather than after one
+- [x] Deployment — answered as packaging rather than a provider: an image that
+      takes its configuration from the environment and migrates nothing runs
+      anywhere that runs containers
 
-## M24 — Documentation
+## M24 — Documentation ✅
 
-- [ ] Architecture and operations documentation
-- [ ] API reference
+- [x] Setup and overview — README and `overview.md`, both of which had
+      described a skeleton through twenty-three milestones
+- [x] Architecture and API documentation — `api.md`, and the M22/M23 sections
+- [x] Developer workflow — `development.md`, and the sub-READMEs
 
 ## M25 — Resume + Interview Preparation
 

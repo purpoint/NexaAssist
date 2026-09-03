@@ -7,28 +7,28 @@ FastAPI service for NexaAssist.
 ```
 app/
 ├── main.py             application factory; middleware, error handlers, router wiring
-├── core/
-│   ├── config.py       environment-driven settings
-│   ├── exceptions.py   AppError base class and the exception handlers
-│   └── logging.py      stdlib logging configuration
-├── api/v1/
-│   ├── router.py       aggregates v1 routes; mounted once by main.py
-│   └── health.py       GET /health
-├── db/
-│   ├── base.py         DeclarativeBase, naming convention, TimestampMixin
-│   ├── health.py       connectivity probe used by /ready
-│   ├── engine.py       async engine + pool lifecycle
-│   ├── session.py      request-scoped AsyncSession dependency
-│   └── errors.py       database failures as AppError subclasses
-├── llm/
-│   ├── base.py         vendor-neutral contract: LLMProvider, LLMConfig, ...
-│   ├── errors.py       LLM failures as AppError subclasses
-│   ├── factory.py      provider registry and the get_llm_provider dependency
-│   ├── prompts.py      prompt text, versioned as named constants
-│   └── providers/      concrete implementations (groq, static)
+├── core/               settings, AppError and its handlers, logging
+├── api/v1/             one module per resource, aggregated by router.py
+│                       health · readiness · intent · documents · tickets
+│                       conversations · assistant · realtime · identity · limits
+├── db/                 engine, request-scoped session, connectivity probe
+├── models/             persistence models; every one imported in __init__.py
 ├── schemas/            request/response models (common.py holds shared shapes)
-├── models/             persistence models (customers, tickets)
-└── services/           domain logic (empty -- no workflows yet)
+├── services/           domain logic; routes stay thin and call in here
+├── llm/                vendor-neutral LLMProvider contract, factory, providers/
+├── rag/                chunking, embeddings, retrieval over pgvector
+├── tools/              the tool contract and registry the agent calls through
+├── agent/              the bounded reason-act loop
+├── routing/            intent classification and the confidence floor
+├── workflows/          defined multi-step workflows and their runner
+├── policy/             deterministic rules; escalation is decided here
+├── escalation/         handing a request to a person
+├── jobs/               job queue: in-memory and Redis, worker, handlers
+├── realtime/           WebSocket frames, connections, answer streaming
+├── auth/               identity, API keys, ownership, realtime tickets
+├── ratelimit/          fixed-window limiting: in-memory and Redis
+├── observability/      spans, tracing, metrics, cost accounting
+└── evaluation/         the regression suite over the agent's behaviour
 ```
 
 ## Run
@@ -40,9 +40,9 @@ uvicorn app.main:app --reload --app-dir backend
 ```
 
 - Liveness: `GET /api/v1/health`
-- Readiness: `GET /api/v1/ready`
-- Tickets: `POST/GET /api/v1/tickets`
-- Docs: `/docs`
+- Readiness, per component: `GET /api/v1/ready`
+- The assistant: `POST /api/v1/assistant/messages`
+- Interactive docs: `/docs` — see [`../docs/api.md`](../docs/api.md) for the rest.
 
 ### Database
 

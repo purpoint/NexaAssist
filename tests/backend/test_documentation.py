@@ -179,3 +179,104 @@ def test_the_shipped_milestones_have_a_section(milestone: str) -> None:
     """The document's own stated rule: each section names the milestone that
     introduced it, in milestone order."""
     assert f"({milestone})" in ARCHITECTURE.read_text(), milestone
+
+
+# --------------------------------------------------------------------------
+# The developer-facing documents
+
+DEVELOPMENT = ROOT / "docs" / "development.md"
+BACKEND_README = ROOT / "backend" / "README.md"
+FRONTEND_README = ROOT / "frontend" / "README.md"
+MILESTONES = ROOT / "docs" / "milestones.md"
+
+BACKEND_PACKAGES = ROOT / "backend" / "app"
+FRONTEND_SOURCES = ROOT / "frontend" / "src"
+
+
+def test_the_backend_layout_lists_every_package() -> None:
+    """A module map that stopped being updated is a map of somewhere else.
+
+    This one described eight packages while twenty existed.
+    """
+    described = BACKEND_README.read_text()
+    packages = [
+        entry.name
+        for entry in BACKEND_PACKAGES.iterdir()
+        if entry.is_dir() and not entry.name.startswith("__")
+    ]
+    assert packages
+    for package in packages:
+        assert f"{package}/" in described, package
+
+
+def test_the_client_layout_lists_every_source_directory() -> None:
+    described = FRONTEND_README.read_text()
+    # .gitkeep does not count as content. Two directories here held nothing
+    # else -- scaffolding for a structure the client never adopted -- and a
+    # guard that accepted them would have been satisfied by empty rooms.
+    directories = [
+        entry.name
+        for entry in FRONTEND_SOURCES.iterdir()
+        if entry.is_dir()
+        and any(child.name != ".gitkeep" for child in entry.iterdir())
+    ]
+    assert directories
+    for directory in directories:
+        assert f"{directory}/" in described, directory
+
+
+def test_the_client_readme_no_longer_calls_itself_scaffolding() -> None:
+    """It said "no UI has been implemented and dependencies have not been
+    installed" for as long as there was a UI and installed dependencies."""
+    text = FRONTEND_README.read_text().lower()
+    for stale in ("scaffolding only", "placeholder root", "no ui has been"):
+        assert stale not in text, stale
+
+
+def test_the_documented_scripts_exist() -> None:
+    """A command in a document that does not exist is worse than no command."""
+    import json
+
+    scripts = json.loads((ROOT / "frontend" / "package.json").read_text())["scripts"]
+    described = FRONTEND_README.read_text()
+    for name in ("dev", "test", "typecheck", "build"):
+        assert name in scripts, name
+        assert f"npm run {name}" in described, name
+
+
+def test_the_development_guide_covers_the_gated_packages() -> None:
+    """The three packages allowed to open a socket, and what each needs.
+
+    Somebody who does not know these exist concludes the suite is incomplete
+    rather than that their machine is.
+    """
+    text = DEVELOPMENT.read_text()
+    for package in ("tests/backend/db/", "tests/backend/redis/", "tests/backend/docker/"):
+        assert package in text, package
+
+
+def test_the_development_guide_names_the_only_permitted_database() -> None:
+    text = DEVELOPMENT.read_text()
+    assert "nexaassist_test" in text
+    assert "createdb nexaassist_test" in text
+
+
+@pytest.mark.parametrize("milestone", ("M22", "M23", "M24"))
+def test_the_shipped_milestones_are_marked(milestone: str) -> None:
+    """The roadmap describes what shipped, not what was hoped for."""
+    text = MILESTONES.read_text()
+    heading = next(
+        line for line in text.splitlines() if line.startswith(f"## {milestone} ")
+    )
+    assert heading.endswith("✅"), heading
+
+
+def test_no_shipped_milestone_has_an_unchecked_item() -> None:
+    """A ticked heading over an unticked box is the roadmap contradicting
+    itself, which is worse than either being wrong alone."""
+    sections = MILESTONES.read_text().split("\n## ")
+    for section in sections:
+        heading = section.splitlines()[0]
+        if "✅" not in heading:
+            continue
+        assert "- [ ]" not in section, heading
