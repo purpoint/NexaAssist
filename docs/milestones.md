@@ -246,14 +246,39 @@ built, so an application surface had to come first. **Authentication,
 authorization, and tenant isolation are deferred, not dropped** — nothing in
 M17 adds auth, and the API is unauthenticated until that milestone lands.
 
-## M18 — Production Frontend
+## M18 — Frontend Integration Readiness ✅
+
+Delivered in three checkpoints.
+
+- [x] The frontend-facing contract: citations carried from retrieval all the
+      way to the assistant response, and dropped whenever policy rewrote the
+      reply
+- [x] Flow integration: one conversation shared by the HTTP endpoint and the
+      M14 socket, plus `GET /api/v1/conversations/{id}`
+- [x] Hardening: the realtime frame vocabulary pinned, response shapes checked
+      for consistency across both transports, CORS verified, and the error
+      contract held to one shape
+
+_Scoped to the backend contract. The **React application is deferred**: this
+milestone makes the backend consumable rather than consuming it, and no
+frontend dependency was installed._
+
+**Still open, moved out of M18:**
 
 - [ ] Remove the deprecated `/api/health` alias and `ENABLE_LEGACY_HEALTH_ROUTE`
-      _(originally scheduled for M2; retargeted here, the first milestone with a
-      real API consumer)_
+      _(originally M2, then M18; deferred again — it is a breaking change to an
+      M1 contract and there is still no real consumer to break)_
 - [ ] Install frontend dependencies
 - [ ] Application shell and routing
 - [ ] Typed API client wired to the backend
+
+## M18b — Security Hardening (moved from M17)
+
+- [ ] Authentication
+- [ ] Authorization and tenant isolation
+
+_The API shipped in M17 is unauthenticated. This is the milestone that changes
+that, and nothing before it should be treated as access-controlled._
 
 ## M19 — Docker / Production-like Environment
 

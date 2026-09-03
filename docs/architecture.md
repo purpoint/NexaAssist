@@ -816,6 +816,42 @@ POST /api/v1/assistant/messages
   `CustomerService` repeats the shape and a test pins that both paths resolve
   the same address to the same customer, so they cannot drift.
 
+### Frontend contract (M18)
+
+```
+open      POST   /api/v1/conversations           → {id, customer_id}
+ask       POST   /api/v1/assistant/messages      → reply + citations + trace_id
+   or     ws     /api/v1/ws  {ask, conversation_id} → delta… complete
+read      GET    /api/v1/conversations/{id}/messages
+```
+
+- **One conversation, two transports.** A client may open a conversation over
+  HTTP, continue it over the socket, and read a single ordered history back.
+  The socket was extended, not duplicated: `ask` gained an optional
+  `conversation_id` and `complete` echoes it, both defaulted.
+- **Citations reach the client, or are honestly absent.** M5 built them and M8
+  had nowhere to put them; `HandlerResponse` now carries them. They are dropped
+  whenever policy rewrote the reply, because provenance for text that is no
+  longer being sent is a false claim — and kept when policy ran and changed
+  nothing, since "drop them whenever policy ran" would be the lazy version of
+  the rule.
+- **One error shape across both transports.** The socket's error frame is the
+  HTTP `ErrorResponse` fields plus a `type` discriminator, so a client parses
+  one format.
+- **A session never spans a socket.** A connection lives for minutes; each
+  recorded turn opens its own short-lived session rather than pinning a pool
+  connection per idle client.
+- **An unknown conversation stops before the stream starts**, because answering
+  into a conversation that cannot hold the reply produces a turn the client can
+  never read back. A failure recording the *answer* is treated the opposite
+  way: the deltas already arrived, so it is reported and the completion still
+  follows.
+- **The realtime vocabulary is pinned by tests.** FastAPI does not describe
+  WebSocket routes, so that pin is the only written contract for the socket.
+- **The API is unauthenticated.** M17 shipped the application surface and
+  security hardening moved after it; nothing here should be treated as
+  access-controlled.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
