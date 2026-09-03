@@ -41,6 +41,9 @@ class KnowledgeBaseHandler:
             # The grounded answerer already reports honestly when the sources
             # do not cover the question; that is exactly "not handled".
             handled=answer.answered,
+            # M5 rebuilds these from retrieval rather than trusting the model,
+            # so they are safe to pass on unchanged.
+            citations=list(answer.citations),
         )
 
 

@@ -11,6 +11,7 @@ import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.escalation.criteria import EscalationReason
+from app.schemas.document import Citation
 from app.routing.router import RouteReason
 from app.schemas.intent import IntentCategory
 
@@ -75,6 +76,15 @@ class AssistantMessageResponse(BaseModel):
     )
     review_id: uuid.UUID | None = Field(
         default=None, description="The queued review item, when one was created."
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description=(
+            "Where the reply came from, when it was drawn from documentation. "
+            "Rebuilt from retrieval rather than taken from the model, and empty "
+            "whenever policy changed the reply — provenance for text that is no "
+            "longer being sent would be a false claim."
+        ),
     )
     conversation_id: uuid.UUID | None = Field(
         default=None,

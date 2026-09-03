@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.document import Citation
 from app.schemas.intent import IntentAnalysis
 
 
@@ -35,6 +36,13 @@ class HandlerResponse(BaseModel):
     handled: bool = Field(
         default=True,
         description="False when the handler ran but could not resolve the request.",
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description=(
+            "Sources this reply was drawn from. Empty for handlers that do not "
+            "answer from retrieved documents, which is most of them."
+        ),
     )
 
 

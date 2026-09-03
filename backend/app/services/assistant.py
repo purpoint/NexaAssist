@@ -27,6 +27,7 @@ from app.core.logging import get_logger
 from app.escalation.criteria import EscalationReason
 from app.escalation.handoff import HandoffService
 from app.routing.router import IntentRouter, RouteReason
+from app.schemas.document import Citation
 from app.schemas.intent import IntentCategory
 from app.models.conversation import MessageRole
 from app.services.conversation import ConversationService
@@ -59,6 +60,7 @@ class AssistantReply(BaseModel):
     escalation_reasons: list[EscalationReason] = Field(default_factory=list)
     review_id: uuid.UUID | None = None
     conversation_id: uuid.UUID | None = None
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class AssistantService:
@@ -123,6 +125,9 @@ class AssistantService:
             escalated=handoff.escalated,
             escalation_reasons=list(handoff.reasons),
             review_id=handoff.review_id,
+            # Escalation only appends a notice, leaving the answered text
+            # intact, so the sources still describe what is being sent.
+            citations=list(routed.citations),
         )
 
     async def _record(

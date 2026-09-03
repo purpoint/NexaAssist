@@ -21,6 +21,7 @@ from app.core.logging import get_logger
 from app.policy.enforcement import PolicyEnforcer
 from app.routing.handlers import HandlerRequest, HandlerResponse, IntentHandler
 from app.routing.registry import HandlerRegistry
+from app.schemas.document import Citation
 from app.schemas.intent import IntentAnalysis, IntentCategory
 
 logger = get_logger(__name__)
@@ -62,6 +63,13 @@ class RoutedReply(BaseModel):
     )
     policy_modified: bool = Field(
         default=False, description="True when policy changed what would have been sent."
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description=(
+            "Sources behind the reply. Empty whenever policy changed the reply: "
+            "provenance for text that is no longer being sent is a false claim."
+        ),
     )
 
 
@@ -150,6 +158,10 @@ class IntentRouter:
             handled=handled,
             policy_rule=policy_rule,
             policy_modified=policy_modified,
+            # Dropped when policy rewrote the reply. Citations describe where
+            # specific text came from, and keeping them against replacement
+            # text would attribute a source to words it never produced.
+            citations=[] if policy_modified else list(response.citations),
         )
 
     def _to_fallback(
