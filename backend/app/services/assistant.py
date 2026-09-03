@@ -28,6 +28,8 @@ from app.escalation.criteria import EscalationReason
 from app.escalation.handoff import HandoffService
 from app.routing.router import IntentRouter, RouteReason
 from app.schemas.intent import IntentCategory
+from app.models.conversation import MessageRole
+from app.services.conversation import ConversationService
 from app.services.intent import IntentService
 
 logger = get_logger(__name__)
@@ -56,6 +58,7 @@ class AssistantReply(BaseModel):
     escalated: bool = False
     escalation_reasons: list[EscalationReason] = Field(default_factory=list)
     review_id: uuid.UUID | None = None
+    conversation_id: uuid.UUID | None = None
 
 
 class AssistantService:
@@ -66,13 +69,26 @@ class AssistantService:
         intent: IntentService,
         router: IntentRouter,
         handoff: HandoffService,
+        conversations: ConversationService | None = None,
     ) -> None:
         self._intent = intent
         self._router = router
         self._handoff = handoff
+        self._conversations = conversations
 
-    async def respond(self, message: str) -> AssistantReply:
-        """Classify, route, and decide whether a person is needed."""
+    async def respond(
+        self, message: str, *, conversation_id: uuid.UUID | None = None
+    ) -> AssistantReply:
+        """Classify, route, and decide whether a person is needed.
+
+        When a conversation is given, the customer's turn is recorded *before*
+        the pipeline runs and the reply after it. Recording the question first
+        means a provider outage still leaves evidence that it was asked --
+        losing the question because answering failed is the worse outcome.
+        """
+        if conversation_id is not None:
+            await self._record(conversation_id, MessageRole.CUSTOMER, message)
+
         analysis = await self._intent.analyze(message)
         routed = await self._router.route(message, analysis)
         handoff = await self._handoff.consider(message, routed)
@@ -90,8 +106,12 @@ class AssistantService:
             handoff.escalated,
         )
 
+        if conversation_id is not None:
+            await self._record(conversation_id, MessageRole.ASSISTANT, handoff.reply)
+
         return AssistantReply(
             reply=handoff.reply,
+            conversation_id=conversation_id,
             intent=routed.decision.intent,
             confidence=routed.decision.confidence,
             handler=routed.decision.handler,
@@ -104,3 +124,14 @@ class AssistantService:
             escalation_reasons=list(handoff.reasons),
             review_id=handoff.review_id,
         )
+
+    async def _record(
+        self, conversation_id: uuid.UUID, role: MessageRole, content: str
+    ) -> None:
+        """Append one turn.
+
+        Raises through: a conversation id that does not exist is a client
+        mistake and deserves its 404, not a silently unrecorded exchange.
+        """
+        assert self._conversations is not None
+        await self._conversations.append(conversation_id, role=role, content=content)

@@ -29,6 +29,13 @@ class AssistantMessageRequest(BaseModel):
         max_length=MAX_MESSAGE_LENGTH,
         description="The customer message to answer.",
     )
+    conversation_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Record this exchange against an existing conversation. Optional: "
+            "a caller with no conversation still gets an answer."
+        ),
+    )
 
 
 class AssistantMessageResponse(BaseModel):
@@ -68,6 +75,10 @@ class AssistantMessageResponse(BaseModel):
     )
     review_id: uuid.UUID | None = Field(
         default=None, description="The queued review item, when one was created."
+    )
+    conversation_id: uuid.UUID | None = Field(
+        default=None,
+        description="The conversation this exchange was recorded against, if any.",
     )
     trace_id: str | None = Field(
         default=None,

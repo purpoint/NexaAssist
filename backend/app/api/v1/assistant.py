@@ -35,6 +35,7 @@ from app.routing.factory import build_router
 from app.schemas.assistant import AssistantMessageRequest, AssistantMessageResponse
 from app.schemas.common import ErrorResponse
 from app.services.assistant import AssistantService
+from app.services.conversation import ConversationService
 from app.services.intent import IntentService
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
@@ -62,6 +63,7 @@ def get_assistant_service(
             session=session, embedder=embedder, provider=observed, settings=settings
         ),
         build_handoff(session=session, settings=settings),
+        ConversationService(session),
     )
 
 
@@ -86,7 +88,9 @@ async def answer_message(
     Catching them again would only risk turning a precise status into a 500.
     """
     with tracer.span("assistant.message", SpanKind.REQUEST) as span:
-        reply = await service.respond(payload.message)
+        reply = await service.respond(
+            payload.message, conversation_id=payload.conversation_id
+        )
         span.set_attributes(
             {
                 "intent": reply.intent.value,
