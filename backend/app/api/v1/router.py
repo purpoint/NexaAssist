@@ -6,6 +6,8 @@ router, so the version prefix is applied in exactly one place.
 
 from fastapi import APIRouter
 
+from app.schemas.common import ErrorResponse
+
 from app.api.v1 import (
     assistant,
     conversations,
@@ -17,7 +19,18 @@ from app.api.v1 import (
     tickets,
 )
 
-router = APIRouter()
+# Declared once for every v1 route rather than repeated on each: M20 replaced
+# FastAPI's default 422 body -- which embeds the offending input, and so
+# returned a customer's message back to them -- with the shared error shape,
+# and the document must say so.
+router = APIRouter(
+    responses={
+        422: {
+            "model": ErrorResponse,
+            "description": "The request was not valid. Field paths only.",
+        }
+    }
+)
 router.include_router(health.router)
 router.include_router(readiness.router)
 router.include_router(intent.router)

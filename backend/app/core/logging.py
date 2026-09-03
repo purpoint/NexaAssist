@@ -10,7 +10,7 @@ import re
 from collections.abc import Iterable
 from logging.config import dictConfig
 
-LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
+LOG_FORMAT = "%(asctime)s %(levelname)-8s [%(trace_id)s] %(name)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
 DEFAULT_LEVEL = "INFO"
@@ -36,6 +36,32 @@ _SECRET_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
         rf"\1\2{REDACTED}",
     ),
 )
+
+
+class TraceContextFilter(logging.Filter):
+    """Stamps the current trace id onto every record.
+
+    Correlation is only useful if it is everywhere. A trace id that appears on
+    spans but not on the log line written beside them means an incident is
+    still two piles of text -- so this attaches it to *all* records, including
+    those from libraries that know nothing about tracing.
+
+    A record outside any span gets ``-`` rather than nothing, because a format
+    string that sometimes has a field and sometimes does not fails at the
+    moment you most want a log line.
+
+    The id identifies a request, never its content, so it is safe on any line.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not hasattr(record, "trace_id"):
+            try:
+                from app.observability.tracer import current_trace_id
+
+                record.trace_id = current_trace_id() or "-"
+            except Exception:  # pragma: no cover - never drop a record over this
+                record.trace_id = "-"
+        return True
 
 
 class SecretRedactingFilter(logging.Filter):
@@ -113,13 +139,17 @@ def configure_logging(
                     "()": SecretRedactingFilter,
                     "secrets": tuple(secrets),
                 },
+                "trace_context": {"()": TraceContextFilter},
             },
             "handlers": {
                 "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "standard",
                     "stream": "ext://sys.stderr",
-                    "filters": ["redact_secrets"],
+                    # Order matters: the trace id is attached first so the
+                    # formatter always has the field, and redaction runs on the
+                    # rendered message regardless.
+                    "filters": ["trace_context", "redact_secrets"],
                 },
             },
             "root": {

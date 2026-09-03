@@ -34,9 +34,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # surface through a third-party traceback or SDK debug logging.
     secrets = [
         secret.get_secret_value()
-        for secret in (settings.llm_api_key, settings.database_url)
+        for secret in (settings.llm_api_key, settings.database_url, settings.redis_url)
         if secret is not None
     ]
+    # M19's shared keys are credentials too. Registering them as literals means
+    # one appearing in a third-party traceback is scrubbed even though no rule
+    # here would recognise its shape.
+    secrets.extend(
+        entry.partition(":")[2].strip()
+        for entry in settings.auth_api_keys
+        if ":" in entry and entry.partition(":")[2].strip()
+    )
     configure_logging(settings.log_level, secrets)
 
     @asynccontextmanager

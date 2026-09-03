@@ -13,15 +13,19 @@ attributes::
         code = "conflict"
         message = "The resource is in a conflicting state."
 
-Request-validation errors keep FastAPI's default 422 body for now -- no
-endpoint accepts a request body yet, so a handler for them would be
-unreachable code.
+Request-validation errors are rendered through ``ErrorResponse`` as well. They
+once kept FastAPI's default body, on the grounds that no endpoint accepted one;
+that stopped being true at M4, and the default body embeds the offending
+``input`` -- so a malformed request carrying a customer's message returned that
+message, card numbers and all, straight back in the error. It is now the same
+shape as every other error, and carries field paths only.
 """
 
 from http import HTTPStatus
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
@@ -82,6 +86,35 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
         logger.warning("%s %s -> %s: %s", request.method, request.url.path, exc.code, exc.message)
         return _render(exc.to_response(), exc.status_code, headers=exc.headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(
+        request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        """Report *where* a body was wrong, never *what* it contained.
+
+        Pydantic's rendering includes the offending value, which for these
+        endpoints is a customer message. Field paths and messages are enough
+        for a client to fix its request and carry nothing of the customer's.
+        """
+        fields = sorted(
+            ".".join(str(part) for part in error["loc"][1:]) or "body"
+            for error in exc.errors()
+        )
+        logger.info(
+            "%s %s -> invalid_request fields=%s",
+            request.method,
+            request.url.path,
+            ",".join(fields),
+        )
+        return _render(
+            ErrorResponse(
+                code="invalid_request",
+                message="The request body is not valid.",
+                details={"fields": fields},
+            ),
+            422,
+        )
 
     @app.exception_handler(StarletteHTTPException)
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
