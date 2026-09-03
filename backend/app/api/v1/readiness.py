@@ -12,6 +12,12 @@ The existing ``/health`` contract is unchanged.
 from fastapi import APIRouter
 
 from app.db.health import database_status
+from app.observability.diagnostics import (
+    authentication_status,
+    job_queue_status,
+    model_provider_status,
+    rate_limiter_status,
+)
 from app.db.errors import DatabaseUnavailableError
 from app.schemas.common import ErrorResponse
 from app.schemas.readiness import ComponentStatus, ReadinessResponse
@@ -39,4 +45,16 @@ async def ready() -> ReadinessResponse:
     if database is ComponentStatus.UNAVAILABLE:
         raise DatabaseUnavailableError(details={"component": "database"})
 
-    return ReadinessResponse(database=database)
+    # Reported, never fatal. A queue or a provider being degraded does not
+    # stop this process answering, and taking it out of rotation for that
+    # would turn a partial outage into a total one.
+    return ReadinessResponse(
+        database=database,
+        components={
+            "database": database,
+            "job_queue": await job_queue_status(),
+            "model_provider": model_provider_status(),
+            "rate_limiter": rate_limiter_status(),
+            "authentication": authentication_status(),
+        },
+    )

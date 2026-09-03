@@ -37,7 +37,11 @@ def test_ready_reports_ok_against_a_live_database(
         response = client.get(READY_URL)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "database": "ok"}
+    body = response.json()
+    # The M3 contract is unchanged; M20 added the components report beside it.
+    assert body["status"] == "ready"
+    assert body["database"] == "ok"
+    assert body["components"]["database"] == "ok"
 
 
 def test_ready_reports_unavailable_against_a_dead_port(

@@ -44,7 +44,11 @@ def test_ready_when_the_database_is_reachable(
         response = client.get(READY_URL)
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ready", "database": "ok"}
+    body = response.json()
+    # The M3 contract is unchanged; M20 added the components report beside it.
+    assert body["status"] == "ready"
+    assert body["database"] == "ok"
+    assert body["components"]["database"] == "ok"
 
 
 def test_ready_when_no_database_is_configured(
@@ -155,7 +159,14 @@ async def test_probe_reports_unavailable_when_connecting_fails(
 
 
 def test_component_status_values() -> None:
-    assert [s.value for s in ComponentStatus] == ["ok", "not_configured", "unavailable"]
+    assert [s.value for s in ComponentStatus] == [
+        "ok",
+        "not_configured",
+        "unavailable",
+        # M20 added "degraded": configured, and not working, but not a reason
+        # to take the process out of rotation.
+        "degraded",
+    ]
 
 
 def test_readiness_response_defaults_to_ready() -> None:
