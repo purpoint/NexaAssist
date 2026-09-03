@@ -58,7 +58,11 @@ export default function App() {
           onDismiss={() => setPanelOpen(false)}
         />
       ) : null}
-      <ConversationScreen client={client} onAuthRequired={setAuthRequired} />
+      <ConversationScreen
+        client={client}
+        onAuthRequired={setAuthRequired}
+        authenticated={configured}
+      />
     </Layout>
   );
 }

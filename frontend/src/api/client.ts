@@ -18,6 +18,7 @@ import type {
   Conversation,
   ConversationHistory,
   Readiness,
+  RealtimeTicket,
 } from './types';
 
 /** The header M19 expects when a deployment requires a key. */
@@ -73,6 +74,17 @@ export class ApiClient {
       'GET',
       `/conversations/${conversationId}/messages${query}`,
     );
+  }
+
+  /**
+   * Trade the API key for a ticket to open a socket with.
+   *
+   * The key travels here as a header and never reaches the socket URL. The
+   * ticket is single-use, so every connection -- including every reconnect --
+   * needs a fresh one.
+   */
+  async mintRealtimeTicket(): Promise<RealtimeTicket> {
+    return this.request<RealtimeTicket>('POST', '/ws/ticket');
   }
 
   /** Component-level status, for a connection indicator. */

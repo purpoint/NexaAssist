@@ -85,6 +85,32 @@ describe('requests', () => {
   });
 });
 
+describe('tickets', () => {
+  it('mints a ticket over authenticated http', async () => {
+    const { client, fetchImpl } = clientReturning(
+      respondWith(200, { ticket: 'abc', expires_in_seconds: 60 }),
+      'secret-key',
+    );
+
+    const minted = await client.mintRealtimeTicket();
+
+    expect(minted.ticket).toBe('abc');
+    const [url, init] = fetchImpl.mock.calls[0];
+    expect(url).toBe(`${BASE}/ws/ticket`);
+    expect(init.method).toBe('POST');
+    // The key travels as a header here so it never reaches the socket URL.
+    expect(init.headers[API_KEY_HEADER]).toBe('secret-key');
+  });
+
+  it('reports a refusal to mint like any other failure', async () => {
+    const { client } = clientReturning(
+      respondWith(401, { code: 'authentication_required', message: 'Auth.' }),
+    );
+    const error = await failureOf(client.mintRealtimeTicket());
+    expect(error.unauthenticated).toBe(true);
+  });
+});
+
 describe('failures', () => {
   it('turns the server error shape into an ApiError', async () => {
     const { client } = clientReturning(

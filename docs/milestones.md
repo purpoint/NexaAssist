@@ -334,11 +334,12 @@ original M18 wording is unbuilt — nothing yet needs a second route.
 
 A key entry point was added after M21: the client stores a key, sends it on
 every request, and opens the panel by itself when a request comes back 401.
-**The socket is still unauthenticated** — a browser cannot set a header on a
-WebSocket handshake — so with authentication on, HTTP carries the key and the
-socket does not. Under scoped authorization the server refuses to record a
-realtime turn and the client falls back to HTTP, which works but streams
-nothing. That is the remaining Outstanding item.
+
+The socket is authenticated too, by ticket: a browser cannot set a header on a
+handshake, so the client trades its key over HTTP for a short-lived, single-use
+ticket and spends that on the connection. The key never reaches a socket URL,
+and a realtime turn is now recorded under the same ownership rules as an HTTP
+one.
 
 ## M22 — Docker / Production-like Environment
 
@@ -362,10 +363,4 @@ nothing. That is the remaining Outstanding item.
 
 ## Outstanding
 
-Carried between milestones rather than belonging to one. Listed here so they
-are visible instead of buried in the milestone that last deferred them.
-
-- [ ] **Authenticate the WebSocket.** A browser cannot set a header on a
-      WebSocket handshake, so this needs a decision about the credential
-      transport (a subprotocol, a first-frame handshake, or a short-lived
-      ticket) before it can be built.
+_Nothing carried between milestones at the moment._

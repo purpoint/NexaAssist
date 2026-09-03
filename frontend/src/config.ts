@@ -21,3 +21,16 @@ export const API_BASE_URL: string = (
  * disagree; the socket lives beside the HTTP API by construction.
  */
 export const WS_URL: string = `${API_BASE_URL.replace(/^http/, 'ws')}/ws`;
+
+/**
+ * The same URL carrying a handshake ticket.
+ *
+ * A ticket is the only credential that goes in a URL, and only because a
+ * browser cannot put one anywhere else on a handshake. It is short-lived and
+ * single-use precisely so that its appearing in a log is survivable; the API
+ * key never comes here.
+ */
+export function socketUrlWithTicket(ticket: string | null): string {
+  if (!ticket) return WS_URL;
+  return `${WS_URL}?ticket=${encodeURIComponent(ticket)}`;
+}

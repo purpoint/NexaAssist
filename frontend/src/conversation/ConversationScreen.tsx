@@ -11,7 +11,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { EmptyState, ErrorBanner, Spinner } from '../components/primitives';
-import { WS_URL } from '../config';
+import { socketUrlWithTicket, WS_URL } from '../config';
 import { useRealtime, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
@@ -21,12 +21,15 @@ export function ConversationScreen({
   client,
   socketFactory,
   onAuthRequired,
+  authenticated = false,
 }: {
   client: ApiClient;
   /** Injected only by tests; production uses the global WebSocket. */
   socketFactory?: SocketFactory;
   /** Told when a request was refused for want of a credential. */
   onAuthRequired?: (required: boolean) => void;
+  /** True when a key is configured, so the socket needs a ticket. */
+  authenticated?: boolean;
 }) {
   const conversation = useConversation(client);
 
@@ -42,7 +45,15 @@ export function ConversationScreen({
       onComplete: conversation.completeStream,
       onError: (_code, message) => conversation.failStream(message),
     },
-    { socketFactory },
+    {
+      socketFactory,
+      // Only when a key is configured. An open deployment needs no ticket,
+      // and asking for one would fail and disable streaming for no reason.
+      getTicket: authenticated
+        ? async () => (await client.mintRealtimeTicket()).ticket
+        : undefined,
+      urlWithTicket: (_base, ticket) => socketUrlWithTicket(ticket),
+    },
   );
 
   // Streaming is attempted, never assumed. `ask` returns false when the

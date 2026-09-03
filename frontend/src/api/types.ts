@@ -105,6 +105,12 @@ export interface ErrorResponse {
   details?: unknown;
 }
 
+export interface RealtimeTicket {
+  /** Spent on the handshake as ?ticket=… . Single-use and short-lived. */
+  ticket: string;
+  expires_in_seconds: number;
+}
+
 export type ComponentStatus =
   | 'ok'
   | 'not_configured'

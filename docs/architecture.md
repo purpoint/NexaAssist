@@ -924,9 +924,16 @@ request ─▶ require_identity ─▶ enforce_rate_limit ─▶ route ─▶ se
 - **An unreachable Redis allows the request.** Rate limiting protects capacity;
   it is not an authorization control, so failing closed would turn a cache
   outage into a total one.
-- **The WebSocket carries no identity**, so under scoping it refuses to record
-  a turn rather than writing unscoped. Fail closed, and the client falls back
-  to HTTP.
+- **The WebSocket is authenticated by ticket.** A browser cannot set a header
+  on a handshake, and neither a cookie nor a long-lived key in a query string
+  is acceptable — a query string reaches proxy logs, history and referrers, and
+  a cookie brings CSRF. So the key is presented over authenticated HTTP to
+  `POST /ws/ticket`, and what reaches the URL is short-lived, single-use,
+  opaque, and bound to one subject. Redemption is a lookup, never a comparison,
+  so nothing is compared in variable time; Redis redemption is a single
+  `GETDEL`, because read-then-delete lets two sockets share one ticket. This
+  replaced the earlier behaviour of refusing to record over a socket: a
+  realtime turn is now written under the same ownership rules as an HTTP one.
 
 ### Observability and operations (M20)
 
@@ -1024,11 +1031,12 @@ ConversationScreen
   then having to hunt for where to type the key is a bad way to learn a
   deployment is protected, and the panel cannot be dismissed while a request is
   blocked.
-- **The socket carries no key**, because a browser cannot set a header on a
-  WebSocket handshake. With authentication on, HTTP is authenticated and the
-  socket is not; under scoped authorization the server refuses to record a
-  realtime turn and the client falls back to HTTP, which answers but does not
-  stream.
+- **The socket is authenticated by ticket.** A browser cannot set a header on
+  a handshake, so the client trades its key over HTTP for a short-lived,
+  single-use ticket and spends that on the connection. The key never reaches a
+  socket URL. A fresh ticket is minted for every attempt, reconnects included,
+  because redeeming destroys it — and a client that cannot mint one does not
+  open a socket it could only have closed, it falls back to HTTP.
 - **What it is not:** one screen and no router — nothing yet needs a second
   route.
 

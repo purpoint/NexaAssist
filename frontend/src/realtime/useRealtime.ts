@@ -11,6 +11,12 @@
  * cap the state is `unavailable`, which is what makes the HTTP fallback a
  * decision rather than an accident.
  *
+ * Every connection attempt mints its own ticket, because a ticket is
+ * single-use: a reconnect that replayed the last one would be refused. The
+ * ticket is fetched before the socket is opened, so a client with no key never
+ * opens a socket it cannot authenticate -- it reports `unavailable` and the
+ * caller falls back to HTTP.
+ *
  * One question is in flight at a time, matching the server's own single-flight
  * rule. Deltas are matched to the request that is open; anything arriving
  * after a complete is discarded, so a late frame from a previous attempt can
@@ -36,12 +42,22 @@ export interface RealtimeHandlers {
 /** Injected so tests drive the socket without a server or a global stub. */
 export type SocketFactory = (url: string) => WebSocket;
 
+/** Mints a handshake ticket, or returns null when one cannot be had. */
+export type TicketSource = () => Promise<string | null>;
+
 export function useRealtime(
   url: string,
   handlers: RealtimeHandlers,
-  options: { enabled?: boolean; socketFactory?: SocketFactory } = {},
+  options: {
+    enabled?: boolean;
+    socketFactory?: SocketFactory;
+    /** Omitted for an open deployment, which needs no ticket. */
+    getTicket?: TicketSource;
+    /** Builds the handshake URL from the ticket. */
+    urlWithTicket?: (base: string, ticket: string | null) => string;
+  } = {},
 ) {
-  const { enabled = true, socketFactory } = options;
+  const { enabled = true, socketFactory, getTicket, urlWithTicket } = options;
 
   const [state, setState] = useState<RealtimeState>('connecting');
   const socketRef = useRef<WebSocket | null>(null);
@@ -59,15 +75,42 @@ export function useRealtime(
   handlersRef.current = handlers;
   const factoryRef = useRef(socketFactory);
   factoryRef.current = socketFactory;
+  const ticketRef = useRef(getTicket);
+  ticketRef.current = getTicket;
+  const urlRef = useRef(urlWithTicket);
+  urlRef.current = urlWithTicket;
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!enabled) return;
     const create =
       factoryRef.current ?? ((target: string) => new WebSocket(target));
 
+    // A fresh ticket per attempt: they are single-use, so replaying the last
+    // one on a reconnect would simply be refused.
+    let target = url;
+    if (ticketRef.current) {
+      let ticket: string | null = null;
+      try {
+        ticket = await ticketRef.current();
+      } catch {
+        ticket = null;
+      }
+      if (!ticket) {
+        // No key, or the server would not mint one. Opening a socket that
+        // cannot authenticate only produces a close frame.
+        setState('unavailable');
+        return;
+      }
+      target = urlRef.current ? urlRef.current(url, ticket) : url;
+    }
+
+    // The component may have unmounted while the ticket was in flight; a
+    // socket opened now would never be closed.
+    if (closedByUs.current) return;
+
     let socket: WebSocket;
     try {
-      socket = create(url);
+      socket = create(target);
     } catch {
       setState('unavailable');
       return;
@@ -121,7 +164,7 @@ export function useRealtime(
         BASE_DELAY_MS * 2 ** (attemptsRef.current - 1),
         MAX_DELAY_MS,
       );
-      timerRef.current = window.setTimeout(connect, delay);
+      timerRef.current = window.setTimeout(() => void connect(), delay);
     };
 
     socket.onerror = () => {
@@ -130,13 +173,14 @@ export function useRealtime(
     };
   }, [enabled, url]);
 
+
   useEffect(() => {
     if (!enabled) {
       setState('unavailable');
       return;
     }
     closedByUs.current = false;
-    connect();
+    void connect();
     return () => {
       closedByUs.current = true;
       if (timerRef.current !== null) window.clearTimeout(timerRef.current);

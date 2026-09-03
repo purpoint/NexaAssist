@@ -76,6 +76,18 @@ function mount(sink = handlers()) {
   return { view, sink };
 }
 
+function mountWithTickets(getTicket: () => Promise<string | null>) {
+  const sink = handlers();
+  const view = renderHook(() =>
+    useRealtime(URL, sink, {
+      socketFactory: (url) => new FakeSocket(url) as never,
+      getTicket,
+      urlWithTicket: (base, ticket) => `${base}?ticket=${ticket}`,
+    }),
+  );
+  return { view, sink };
+}
+
 beforeEach(() => {
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
@@ -258,5 +270,67 @@ describe('asking', () => {
 
     expect(sink.errors).toEqual([]);
     expect(view.result.current.ready).toBe(true);
+  });
+});
+
+describe('tickets', () => {
+  it('spends a ticket on the handshake', async () => {
+    const getTicket = vi.fn().mockResolvedValue('ticket-one');
+    const { view } = mountWithTickets(getTicket);
+
+    await waitFor(() => expect(FakeSocket.instances).toHaveLength(1));
+    expect(FakeSocket.instances[0].url).toBe(`${URL}?ticket=ticket-one`);
+
+    act(() => FakeSocket.instances[0].open());
+    await waitFor(() => expect(view.result.current.ready).toBe(true));
+  });
+
+  it('mints a fresh ticket for every reconnect', async () => {
+    // Tickets are single-use, so replaying the last one would be refused.
+    vi.useFakeTimers();
+    const getTicket = vi
+      .fn()
+      .mockResolvedValueOnce('ticket-one')
+      .mockResolvedValueOnce('ticket-two');
+    mountWithTickets(getTicket);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    act(() => FakeSocket.instances[0].open());
+    act(() => FakeSocket.instances[0].drop());
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1000);
+    });
+
+    expect(getTicket).toHaveBeenCalledTimes(2);
+    expect(FakeSocket.instances[1].url).toBe(`${URL}?ticket=ticket-two`);
+  });
+
+  it('does not open a socket it cannot authenticate', async () => {
+    // No key, or a server that will not mint one: opening anyway only earns a
+    // close frame, and the caller falls back to HTTP.
+    const { view } = mountWithTickets(vi.fn().mockResolvedValue(null));
+
+    await waitFor(() => expect(view.result.current.state).toBe('unavailable'));
+    expect(FakeSocket.instances).toHaveLength(0);
+    expect(view.result.current.ready).toBe(false);
+  });
+
+  it('treats a failed mint as no ticket rather than crashing', async () => {
+    const { view } = mountWithTickets(
+      vi.fn().mockRejectedValue(new Error('401')),
+    );
+
+    await waitFor(() => expect(view.result.current.state).toBe('unavailable'));
+    expect(FakeSocket.instances).toHaveLength(0);
+  });
+
+  it('never puts a ticket in the url when none is required', async () => {
+    const { view } = mount();
+    await waitFor(() => expect(FakeSocket.instances).toHaveLength(1));
+    expect(FakeSocket.instances[0].url).toBe(URL);
+    expect(view.result.current.state).not.toBe('unavailable');
   });
 });
