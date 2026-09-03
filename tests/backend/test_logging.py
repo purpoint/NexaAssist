@@ -10,7 +10,9 @@ from app.schemas.intent import IntentAnalysis, IntentCategory
 from app.services.intent import IntentService
 from tests.backend.llm.fakes import FakeLLMProvider
 
-FAKE_KEY = "gsk_0123456789abcdefghijKLMNOPqrstuvwxyz0123456789ab"
+# Not a key: a sequence shaped like one, so the redaction under test has
+# something to redact.
+FAKE_KEY = "gsk_0123456789abcdefghijKLMNOPqrstuvwxyz0123456789ab"  # secret-scan: synthetic
 CONFIGURED = "a-configured-secret-value-not-key-shaped"
 
 

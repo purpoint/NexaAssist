@@ -27,7 +27,7 @@ from app.observability.spans import OMITTED, SpanKind, sanitise_attributes
 from app.observability.tracer import InMemoryRecorder, Tracer, current_trace_id
 
 # Synthetic throughout. These exist to prove redaction, and are not real.
-FAKE_GROQ_KEY = "gsk_0123456789abcdefghijklmnop"
+FAKE_GROQ_KEY = "gsk_0123456789abcdefghijklmnop"  # secret-scan: synthetic
 FAKE_BEARER = "Bearer abcdef0123456789.token.value"
 FAKE_DB_URL = "postgresql+asyncpg://appuser:hunter2@db.internal:5432/nexaassist"
 FAKE_REDIS_URL = "redis://default:swordfish@cache.internal:6379/0"

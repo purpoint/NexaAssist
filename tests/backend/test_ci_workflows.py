@@ -122,13 +122,18 @@ def test_the_backend_job_installs_the_declared_dependencies(
 def test_the_backend_job_runs_the_version_the_image_runs(
     tests_workflow: dict,
 ) -> None:
-    """Testing what ships is worth more than testing the newest interpreter."""
-    setup = [
-        step
-        for step in steps(tests_workflow["jobs"]["backend"])
-        if str(step.get("uses", "")).startswith("actions/setup-python")
-    ]
-    assert setup and setup[0]["with"]["python-version"] == "3.12"
+    """Testing what ships is worth more than testing the newest interpreter.
+
+    Read from the Dockerfile rather than written down here, so bumping the
+    image's Python without bumping CI's is a failure rather than a silence.
+    """
+    dockerfile = (
+        Path(__file__).resolve().parents[2] / "backend" / "Dockerfile"
+    ).read_text()
+    image_version = re.search(r"FROM python:(\d+\.\d+)", dockerfile)
+    assert image_version
+    versions = tests_workflow["jobs"]["backend"]["strategy"]["matrix"]["python-version"]
+    assert image_version.group(1) in versions
 
 
 def test_the_frontend_job_typechecks_and_tests(tests_workflow: dict) -> None:
@@ -251,3 +256,57 @@ def test_the_stack_is_always_torn_down(integration_workflow: dict) -> None:
         if "compose" in str(step.get("run", "")) and "down" in str(step.get("run", ""))
     ]
     assert teardown and all(step.get("if") == "always()" for step in teardown)
+
+
+# --------------------------------------------------------------------------
+# Hardening
+
+PYPROJECT = Path(__file__).resolve().parents[2] / "backend" / "pyproject.toml"
+
+
+@pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
+def test_every_action_is_pinned_to_a_commit(path: Path) -> None:
+    """A tag is a moving target.
+
+    `@v4` is whatever the publisher points it at today, and whoever can move
+    that tag can run code in a job holding this repository's token. A commit
+    SHA cannot be re-pointed.
+    """
+    for job in load(path)["jobs"].values():
+        for step in steps(job):
+            uses = step.get("uses")
+            if uses is None:
+                continue
+            ref = uses.split("@")[-1]
+            assert re.fullmatch(r"[0-9a-f]{40}", ref), uses
+
+
+@pytest.mark.parametrize("path", workflow_files(), ids=lambda p: p.name)
+def test_a_superseded_run_is_cancelled(path: Path) -> None:
+    """Two pushes a minute apart should not both hold a runner to answer a
+    question only the second one is asking."""
+    concurrency = load(path)["concurrency"]
+    assert concurrency["cancel-in-progress"] is True
+    assert "github.ref" in concurrency["group"]
+
+
+def test_the_declared_python_floor_is_tested(tests_workflow: dict) -> None:
+    """The project says >=3.11. A claim nothing runs is a claim nobody
+    checks, and the floor is the version most likely to break unnoticed --
+    nobody develops on it."""
+    declared = re.search(r'requires-python\s*=\s*">=([\d.]+)"', PYPROJECT.read_text())
+    assert declared
+    versions = tests_workflow["jobs"]["backend"]["strategy"]["matrix"]["python-version"]
+    assert declared.group(1) in versions
+
+
+def test_a_failing_version_does_not_hide_the_others(tests_workflow: dict) -> None:
+    """"3.11 broke" and "3.12 broke" are different findings."""
+    assert tests_workflow["jobs"]["backend"]["strategy"]["fail-fast"] is False
+
+
+def test_the_secret_scan_runs_on_every_push(tests_workflow: dict) -> None:
+    commands = " ".join(
+        str(step.get("run", "")) for step in steps(tests_workflow["jobs"]["secrets"])
+    )
+    assert "scan-secrets.sh" in commands
