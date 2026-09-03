@@ -3,3 +3,6 @@
 
 pytest>=8.0,<9.0
 httpx>=0.27,<1.0
+# Lint. Invoked as `python -m pyflakes backend/app backend/alembic tests`, so
+# the module entry point is what matters, not a console script.
+pyflakes>=3.2,<4.0
