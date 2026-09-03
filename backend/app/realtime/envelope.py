@@ -11,6 +11,7 @@ fields everywhere: a discriminated union means an unknown ``type`` is rejected
 at the edge instead of falling through to a handler that quietly does nothing.
 """
 
+import uuid
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
@@ -66,6 +67,14 @@ class Ask(BaseModel):
 
     type: Literal[ClientMessageType.ASK]
     question: str = Field(min_length=1, max_length=MAX_QUESTION_LENGTH)
+    conversation_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Record this exchange against an existing conversation, the same "
+            "way POST /assistant/messages does. Optional: a socket with no "
+            "conversation still gets an answer."
+        ),
+    )
 
 
 ClientMessage = Annotated[Ping | Ask, Field(discriminator="type")]
@@ -125,6 +134,10 @@ class Complete(ServerMessage):
     type: Literal[ServerMessageType.COMPLETE] = ServerMessageType.COMPLETE
     text: str
     deltas: int
+    conversation_id: uuid.UUID | None = Field(
+        default=None,
+        description="The conversation this exchange was recorded against, if any.",
+    )
 
 
 class Error(ServerMessage):

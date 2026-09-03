@@ -28,6 +28,7 @@ from app.core.logging import get_logger
 from app.llm.streaming import StreamingLLMProvider, build_streaming_provider
 from app.realtime.answers import AnswerStreamer
 from app.realtime.connection import Connection, ConnectionRegistry
+from app.realtime.conversations import SessionTurnRecorder, TurnRecorder
 from app.realtime.envelope import (
     Ask,
     ClientMessageType,
@@ -81,12 +82,22 @@ def get_streaming_provider() -> StreamingLLMProvider:
     return build_streaming_provider(get_settings())
 
 
+def get_turn_recorder() -> TurnRecorder:
+    """How realtime turns reach the database.
+
+    A dependency so a test can substitute one, and so the socket never holds a
+    session: the recorder opens a short-lived one per turn.
+    """
+    return SessionTurnRecorder()
+
+
 @router.websocket("/ws")
 async def realtime(
     websocket: WebSocket,
     settings: Settings = Depends(get_settings),
     registry: ConnectionRegistry = Depends(get_registry),
     provider: StreamingLLMProvider = Depends(get_streaming_provider),
+    recorder: TurnRecorder = Depends(get_turn_recorder),
 ) -> None:
     """Serve one realtime connection for its lifetime."""
     await websocket.accept()
@@ -100,7 +111,9 @@ async def realtime(
         await connection.send(Ready(connection_id=connection.id))
         # One streamer per connection: that is the scope the single-flight rule
         # is defined over.
-        await _serve(connection, websocket, settings, AnswerStreamer(provider))
+        await _serve(
+            connection, websocket, settings, AnswerStreamer(provider, recorder)
+        )
     except WebSocketDisconnect:
         # The ordinary way a socket ends.
         pass
@@ -156,7 +169,9 @@ async def _handle(
 ) -> None:
     """Dispatch one validated frame."""
     if isinstance(message, Ask):
-        await streamer.answer(connection, message.question)
+        await streamer.answer(
+            connection, message.question, conversation_id=message.conversation_id
+        )
         return
     if getattr(message, "type", None) is ClientMessageType.PING:
         await connection.send(Pong())

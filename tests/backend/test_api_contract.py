@@ -24,6 +24,7 @@ EXPECTED_PATHS = {
     "/api/v1/documents/{document_id}",
     "/api/v1/assistant/messages",
     "/api/v1/conversations",
+    "/api/v1/conversations/{conversation_id}",
     "/api/v1/conversations/{conversation_id}/messages",
 }
 

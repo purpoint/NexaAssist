@@ -64,6 +64,27 @@ async def start_conversation(
 
 
 @router.get(
+    "/{conversation_id}",
+    response_model=ConversationResponse,
+    summary="Fetch a conversation",
+    responses={404: {"model": ErrorResponse, "description": "No such conversation."}},
+)
+async def read_conversation(
+    conversation_id: uuid.UUID,
+    conversations: Annotated[ConversationService, Depends(get_conversation_service)],
+) -> ConversationResponse:
+    """Return a conversation's identity.
+
+    A client resuming from a stored id needs to know it is still valid before
+    it starts rendering, and a 404 here is a cheaper answer than an empty
+    message list that looks like a conversation with nothing in it.
+    """
+    return ConversationResponse.model_validate(
+        await conversations.get(conversation_id)
+    )
+
+
+@router.get(
     "/{conversation_id}/messages",
     response_model=ConversationHistoryResponse,
     summary="Read a conversation's turns",
