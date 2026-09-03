@@ -157,3 +157,97 @@ def test_no_job_migrates_a_database(tests_workflow: dict) -> None:
     for name, job in tests_workflow["jobs"].items():
         commands = " ".join(str(step.get("run", "")) for step in steps(job))
         assert "alembic upgrade" not in commands, name
+
+
+# --------------------------------------------------------------------------
+# The workflow that needs real infrastructure
+
+INTEGRATION_WORKFLOW = WORKFLOWS / "integration.yml"
+
+
+@pytest.fixture(scope="module")
+def integration_workflow() -> dict:
+    return load(INTEGRATION_WORKFLOW)
+
+
+def test_the_suite_runs_only_against_the_dedicated_test_database(
+    integration_workflow: dict,
+) -> None:
+    """The suite's own guard refuses any other database.
+
+    Pointing CI at one it would refuse turns a safety property into a failed
+    job nobody can explain; pointing it at a real one would be worse.
+    """
+    for step in steps(integration_workflow["jobs"]["services"]):
+        url = (step.get("env") or {}).get("TEST_DATABASE_URL")
+        if url:
+            assert url.endswith("/nexaassist_test"), url
+
+
+def test_redis_is_confined_to_the_test_index(integration_workflow: dict) -> None:
+    """A Redis server is shared far more often than a database is."""
+    for step in steps(integration_workflow["jobs"]["services"]):
+        url = (step.get("env") or {}).get("TEST_REDIS_URL")
+        if url:
+            assert url.endswith("/15"), url
+
+
+def test_the_database_service_can_create_the_vector_extension(
+    integration_workflow: dict,
+) -> None:
+    postgres = integration_workflow["jobs"]["services"]["services"]["postgres"]
+    assert "pgvector" in postgres["image"]
+
+
+def test_no_password_is_written_for_the_service_containers(
+    integration_workflow: dict,
+) -> None:
+    """Trust authentication instead: the container is ephemeral, reachable
+    only from its own job, and destroyed with it. A password in a public
+    workflow file would be strictly worse and no more secure."""
+    postgres = integration_workflow["jobs"]["services"]["services"]["postgres"]
+    assert "POSTGRES_PASSWORD" not in postgres["env"]
+    assert postgres["env"]["POSTGRES_HOST_AUTH_METHOD"] == "trust"
+
+
+@pytest.mark.parametrize("service", ("postgres", "redis"))
+def test_every_service_container_is_waited_for(
+    integration_workflow: dict, service: str
+) -> None:
+    """Without a health option the job starts the moment the container
+    exists, which for PostgreSQL is seconds before it accepts connections."""
+    options = integration_workflow["jobs"]["services"]["services"][service]["options"]
+    assert "--health-cmd" in options
+
+
+def test_the_stack_password_is_generated_rather_than_written(
+    integration_workflow: dict,
+) -> None:
+    """The stack requires the variable and defaults it to nothing, which is
+    as much what this job exercises as the stack coming up."""
+    commands = " ".join(
+        str(step.get("run", "")) for step in steps(integration_workflow["jobs"]["stack"])
+    )
+    assert "openssl rand" in commands
+    assert "NEXA_DB_PASSWORD=" in commands
+
+
+def test_the_stack_migrates_only_after_it_is_up(integration_workflow: dict) -> None:
+    """Ordering, asserted: a migration folded into `up` would be the exact
+    thing the compose file is built to prevent."""
+    commands = [
+        str(step.get("run", "")) for step in steps(integration_workflow["jobs"]["stack"])
+    ]
+    started = next(i for i, c in enumerate(commands) if "compose up" in c)
+    migrated = next(i for i, c in enumerate(commands) if "profile migrate run" in c)
+    assert started < migrated
+    assert "migrate" not in commands[started]
+
+
+def test_the_stack_is_always_torn_down(integration_workflow: dict) -> None:
+    teardown = [
+        step
+        for step in steps(integration_workflow["jobs"]["stack"])
+        if "compose" in str(step.get("run", "")) and "down" in str(step.get("run", ""))
+    ]
+    assert teardown and all(step.get("if") == "always()" for step in teardown)

@@ -9,8 +9,10 @@ correlation stamp is checked to be an identifier and nothing more.
 import logging
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.api.v1.intent import get_llm_provider
 from app.core.config import Settings
 from app.core.logging import (
     REDACTED,
@@ -18,6 +20,8 @@ from app.core.logging import (
     TraceContextFilter,
     configure_logging,
 )
+from app.llm.base import LLMConfig
+from app.llm.providers.static_provider import StaticLLMProvider
 from app.main import create_app
 from app.observability.spans import OMITTED, SpanKind, sanitise_attributes
 from app.observability.tracer import InMemoryRecorder, Tracer, current_trace_id
@@ -232,9 +236,29 @@ def test_an_error_body_never_carries_a_cause(caplog: pytest.LogCaptureFixture) -
     assert "llm_unavailable" in caplog.text
 
 
+def _app_that_can_reach_validation() -> FastAPI:
+    """An app whose LLM dependency resolves, so the body is what fails.
+
+    FastAPI resolves dependencies before it validates a body. On a machine
+    with no provider key -- a fresh clone, a CI runner -- building the real
+    provider raises first, and these tests got a 500 about configuration
+    instead of the 422 they are about. Substituting a deterministic provider
+    puts validation back on the path being tested.
+    """
+    app = create_app()
+    # A factory, not the class: FastAPI reads a class dependency's
+    # __init__ signature and turns its parameters into request fields, so
+    # passing the class itself adds `config` to the very error body this
+    # test is asserting about.
+    app.dependency_overrides[get_llm_provider] = lambda: StaticLLMProvider(
+        LLMConfig(provider="static", model="static-model")
+    )
+    return app
+
+
 def test_a_validation_error_does_not_echo_the_input() -> None:
     """The default FastAPI body embeds the offending value; ours does not."""
-    with TestClient(create_app()) as client:
+    with TestClient(_app_that_can_reach_validation()) as client:
         response = client.post(
             "/api/v1/intent/analyze", json={"message": "", "extra": CUSTOMER_MESSAGE}
         )
@@ -246,7 +270,7 @@ def test_a_validation_error_does_not_echo_the_input() -> None:
 
 def test_a_validation_error_still_says_which_fields_were_wrong() -> None:
     """Sanitised, not useless: a client must be able to fix its request."""
-    with TestClient(create_app()) as client:
+    with TestClient(_app_that_can_reach_validation()) as client:
         body = client.post(
             "/api/v1/intent/analyze", json={"message": "", "extra": 1}
         ).json()

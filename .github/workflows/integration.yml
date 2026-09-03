@@ -1,0 +1,129 @@
+# The tests that need a real database, a real Redis, and a real stack.
+#
+# They are separated from the fast suite because they are slow, not because
+# they are optional: the guards that matter most -- that a migration applies
+# and reverses, that a queue survives a round trip through Redis, that the
+# whole stack comes up -- cannot be answered by anything in-process.
+#
+# No credential appears here. PostgreSQL runs with trust authentication, which
+# is safe precisely because the container is ephemeral, reachable only from
+# this job, and destroyed with it; and the stack's required database password
+# is generated for the run rather than written down.
+
+name: integration
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  services:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        # pgvector, not stock postgres: the first migration runs
+        # CREATE EXTENSION vector.
+        image: pgvector/pgvector:pg15
+        env:
+          # No password anywhere, rather than a password in a public file.
+          # The container exists for one job and accepts connections only
+          # from it.
+          POSTGRES_HOST_AUTH_METHOD: trust
+          # The one database these tests are allowed to touch. Named here so
+          # the suite's own guard -- which refuses to run against anything
+          # else -- has something to match.
+          POSTGRES_DB: nexaassist_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d nexaassist_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements-dev.txt
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+
+      # Explicit paths rather than the whole suite: this job exists to run
+      # what the fast one skips, and running everything twice would only make
+      # both slower.
+      - name: Database and Redis tests
+        env:
+          TEST_DATABASE_URL: postgresql+asyncpg://postgres@localhost:5432/nexaassist_test
+          TEST_REDIS_URL: redis://localhost:6379/15
+        run: python -m pytest tests/backend/db tests/backend/redis -q
+
+  stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      # Generated, not written down: the stack requires this variable and has
+      # no default, which is the property being exercised as much as the
+      # stack itself.
+      - name: Generate a password for this run
+        run: echo "NEXA_DB_PASSWORD=$(openssl rand -hex 16)" >> "$GITHUB_ENV"
+
+      - name: Build the images
+        run: docker compose build
+
+      - name: Start the stack
+        run: docker compose up --detach --wait
+
+      # After `up`, never during it: nothing in the stack waits on this, and
+      # that is the point.
+      - name: Apply migrations
+        run: docker compose --profile migrate run --rm migrate
+
+      - name: Check the API answers
+        run: |
+          curl --fail --silent --show-error http://127.0.0.1:18000/api/v1/health
+          curl --fail --silent --show-error http://127.0.0.1:18000/api/v1/ready
+
+      - name: Check the client is served
+        run: curl --fail --silent --show-error http://127.0.0.1:15173/ > /dev/null
+
+      - name: Check the schema was applied
+        run: |
+          docker compose exec -T db psql -U nexa -d nexaassist -c '\dt' | grep conversations
+
+      # Logs are worth more than a green tick when this job is the one that
+      # fails, and `if: failure()` is what makes them appear.
+      - name: Show logs
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose --profile migrate down --volumes

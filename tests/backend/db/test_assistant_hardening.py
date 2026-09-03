@@ -16,6 +16,8 @@ from app.db.errors import DatabaseUnavailableError
 from app.llm.base import LLMConfig
 from app.llm.errors import LLMUnavailableError
 from app.llm.providers.static_provider import StaticLLMProvider
+from app.api.v1.realtime import get_streaming_provider
+from app.llm.streaming import StaticStreamingProvider
 from app.main import create_app
 from app.rag.embeddings import HashingEmbeddingProvider
 from app.schemas.intent import IntentAnalysis, IntentCategory
@@ -66,6 +68,9 @@ def build(provider: object | None = None) -> tuple[FastAPI, callable]:
     app = create_app(settings)
     app.dependency_overrides[get_embedding_provider] = HashingEmbeddingProvider
     app.dependency_overrides[get_llm_provider] = lambda: provider or canned()
+    # The socket resolves its own provider, separately from the completion
+    # one: without this the realtime test here needs a real key to greet.
+    app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider()
 
     def teardown() -> None:
         session_module.get_engine, health_module.get_engine = originals  # type: ignore[assignment]

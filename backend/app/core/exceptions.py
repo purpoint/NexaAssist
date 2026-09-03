@@ -28,6 +28,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.websockets import WebSocket, WebSocketState
 
 from app.core.logging import get_logger
 from app.schemas.common import ErrorResponse
@@ -71,6 +72,10 @@ def _code_for_status(status_code: int) -> str:
         return "http_error"
 
 
+CLOSE_INTERNAL_ERROR = 1011
+"""Standard WebSocket close code for a server-side failure."""
+
+
 def _render(error: ErrorResponse, status_code: int, headers: dict[str, str] | None = None) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
@@ -79,11 +84,35 @@ def _render(error: ErrorResponse, status_code: int, headers: dict[str, str] | No
     )
 
 
+async def _close_socket(connection: WebSocket, exc: AppError) -> None:
+    """End a socket that failed, with a close code rather than a JSON body.
+
+    Nothing reads a response body on a WebSocket, so the HTTP rendering has
+    nothing to say here. 1011 is the standard "the server hit a condition it
+    could not fulfil", which a client library reports without special-casing
+    us. If the handshake never completed, closing rejects it -- which is the
+    right outcome for a connection that was never going to work.
+    """
+    logger.warning(
+        "WEBSOCKET %s -> %s: %s", connection.url.path, exc.code, exc.message
+    )
+    if connection.application_state is not WebSocketState.DISCONNECTED:
+        await connection.close(code=CLOSE_INTERNAL_ERROR)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Attach the application's exception handlers to ``app``."""
 
     @app.exception_handler(AppError)
-    async def handle_app_error(request: Request, exc: AppError) -> JSONResponse:
+    async def handle_app_error(request: Request, exc: AppError) -> JSONResponse | None:
+        # Starlette calls this for both scopes, and hands a WebSocket rather
+        # than a Request for the second. Reading `.method` off one is an
+        # AttributeError -- which turned any AppError raised while resolving a
+        # socket's dependencies into an unhandled crash instead of the clean
+        # close the client was owed.
+        if request.scope["type"] == "websocket":
+            await _close_socket(request, exc)
+            return None
         logger.warning("%s %s -> %s: %s", request.method, request.url.path, exc.code, exc.message)
         return _render(exc.to_response(), exc.status_code, headers=exc.headers)
 

@@ -6,6 +6,7 @@ written against the frames rather than the implementation for that reason.
 """
 
 import json
+from collections.abc import Iterator
 
 import pytest
 from fastapi import WebSocketDisconnect
@@ -16,9 +17,12 @@ from app.api.v1.realtime import (
     CLOSE_AT_CAPACITY,
     CLOSE_TOO_LARGE,
     get_registry,
+    get_streaming_provider,
     reset_registry,
 )
 from app.core.config import Settings, get_settings
+from app.core.exceptions import CLOSE_INTERNAL_ERROR, AppError
+from app.llm.streaming import StaticStreamingProvider, StreamingLLMProvider
 from app.main import create_app
 from app.realtime.connection import Connection, ConnectionRegistry
 from app.realtime.envelope import (
@@ -37,6 +41,28 @@ from app.realtime.errors import RealtimeCapacityError
 def _fresh_registry() -> None:
     """The registry is process-wide, so tests must not inherit each other's."""
     reset_registry()
+
+
+@pytest.fixture
+def client(settings: Settings) -> Iterator[TestClient]:
+    """Shadows the shared fixture, with a deterministic streaming provider.
+
+    The socket resolves one at connect time, so on a machine with no provider
+    key -- a fresh clone, a CI runner -- building it raised before the
+    handshake and every test in this file failed. That made these tests a
+    statement about whoever ran them rather than about the transport.
+
+    Overriding it also means no real provider is ever constructed here, which
+    is the property that matters more: this file opens sockets, and a socket
+    holding a real client is one plausible bug away from a billable call.
+    """
+    app = create_app(settings)
+    # A factory, not the class: FastAPI reads a class dependency's
+    # __init__ signature and turns its parameters into request fields,
+    # which would quietly add a `text` query parameter to the handshake.
+    app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider()
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 class FakeSocket:
@@ -200,6 +226,7 @@ def test_an_oversized_frame_closes_the_socket() -> None:
     # behaviour, documented in docs/architecture.md -- so the override is what
     # actually puts this setting in front of the endpoint.
     app.dependency_overrides[get_settings] = lambda: settings
+    app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider()
     with TestClient(app) as client:
         with client.websocket_connect("/api/v1/ws") as socket:
             socket.receive_json()
@@ -218,6 +245,7 @@ def test_the_socket_is_refused_once_capacity_is_reached() -> None:
     # the production dependency caches for.
     shared = ConnectionRegistry(max_connections=1)
     app.dependency_overrides[get_registry] = lambda: shared
+    app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider()
     with TestClient(app) as client:
         with client.websocket_connect("/api/v1/ws") as first:
             first.receive_json()
@@ -243,3 +271,29 @@ def test_the_websocket_route_is_absent_from_openapi(client: TestClient) -> None:
     """
     paths = client.get("/openapi.json").json()["paths"]
     assert "/api/v1/ws" not in paths
+
+
+def test_a_failing_dependency_closes_the_socket_instead_of_crashing(
+    settings: Settings,
+) -> None:
+    """An AppError raised while resolving a socket's dependencies.
+
+    Starlette routes it to the same handler as an HTTP error and hands it a
+    WebSocket, which has no ``.method``. Reading one turned every such error
+    into an unhandled AttributeError -- so a deployment with, say, no provider
+    key configured did not refuse the connection, it crashed on it. The client
+    is owed a close code.
+    """
+
+    def unconfigured() -> StreamingLLMProvider:
+        raise AppError("The model provider is not configured.")
+
+    app = create_app(settings)
+    app.dependency_overrides[get_streaming_provider] = unconfigured
+
+    with TestClient(app) as unhealthy:
+        with pytest.raises(WebSocketDisconnect) as refused:
+            with unhealthy.websocket_connect("/api/v1/ws"):
+                pass
+
+    assert refused.value.code == CLOSE_INTERNAL_ERROR
