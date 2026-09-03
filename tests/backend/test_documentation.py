@@ -130,3 +130,52 @@ def test_the_overview_marks_capabilities_it_actually_has() -> None:
     text = OVERVIEW.read_text()
     assert "- [ ]" not in text, "an unchecked capability remains in the overview"
     assert text.count("- [x]") >= 8
+
+
+# --------------------------------------------------------------------------
+# The architecture and API documents describe what exists
+
+ARCHITECTURE = ROOT / "docs" / "architecture.md"
+API_REFERENCE = ROOT / "docs" / "api.md"
+
+
+def test_the_architecture_diagram_lists_the_served_routes(schema: dict) -> None:
+    """The diagram is the first thing anybody reads.
+
+    A route in it that the service does not serve sends a reader looking for
+    something that is not there; one it serves but the diagram omits is a
+    reader who never learns it exists.
+    """
+    diagram = ARCHITECTURE.read_text()
+    for path in schema["paths"]:
+        assert path in diagram, path
+
+
+def test_the_api_reference_documents_every_endpoint(schema: dict) -> None:
+    reference = API_REFERENCE.read_text()
+    for path in schema["paths"]:
+        # Documented under the version prefix the whole file establishes once.
+        assert path.removeprefix("/api/v1") in reference, path
+
+
+def test_the_api_reference_describes_the_one_error_shape() -> None:
+    """A client that can parse one error body can parse all of them, over
+    both transports -- which is only useful if it is written down."""
+    reference = API_REFERENCE.read_text()
+    for field in ("code", "message", "details"):
+        assert f'"{field}"' in reference or f"`{field}`" in reference, field
+
+
+def test_the_deployment_question_is_answered() -> None:
+    """It was open, and M22 is what closed it."""
+    text = ARCHITECTURE.read_text()
+    question = text.split("- Deployment target?")[1].split("\n- ")[0]
+    assert "Still open" not in question
+    assert "M22" in question
+
+
+@pytest.mark.parametrize("milestone", ("M22", "M23"))
+def test_the_shipped_milestones_have_a_section(milestone: str) -> None:
+    """The document's own stated rule: each section names the milestone that
+    introduced it, in milestone order."""
+    assert f"({milestone})" in ARCHITECTURE.read_text(), milestone

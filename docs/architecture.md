@@ -12,17 +12,18 @@ Client (React + TS)  ──HTTP──▶  FastAPI service
        │                          ├── POST /api/v1/intent/analyze
        │                          ├── POST /api/v1/documents
        │                          ├── GET  /api/v1/documents
-       │                          ├── GET  /api/v1/documents/{id}
+       │                          ├── GET  /api/v1/documents/{document_id}
        │                          ├── POST /api/v1/documents/answer
        │                          ├── POST /api/v1/tickets
        │                          ├── GET  /api/v1/tickets
-       │                          ├── GET  /api/v1/tickets/{id}
+       │                          ├── GET  /api/v1/tickets/{ticket_id}
        │                          ├── POST /api/v1/assistant/messages
        │                          ├── POST /api/v1/conversations
-       │                          ├── GET  /api/v1/conversations/{id}
-       │                          └── GET  /api/v1/conversations/{id}/messages
+       │                          ├── GET  /api/v1/conversations/{conversation_id}
+       │                          ├── GET  /api/v1/conversations/{conversation_id}/messages
+       │                          └── POST /api/v1/ws/ticket
        │
-       └────ws────▶  GET /api/v1/ws   (not described by OpenAPI)
+       └────ws────▶  GET /api/v1/ws?ticket=…   (not described by OpenAPI)
 ```
 
 Behind that surface: a classify → route → policy → escalate pipeline (M17) over
@@ -1064,6 +1065,95 @@ test against a live database; never edit a pushed migration, correct it with a
 new one. A test asserts the history has exactly one head, because a branched
 chain is far cheaper to catch before a merge than after.
 
+## Packaging (M22)
+
+Two images, each built in two stages, and the split is the same argument in
+both cases: what is needed to build a thing is not what is needed to run it.
+The backend builder compiles wheels into a virtualenv and the runtime copies
+that virtualenv across, so the compiler is in the image that builds and absent
+from the image that serves. The client builder runs Vite; what ships is static
+files and nginx, with node nowhere in it.
+
+Three properties the backend image is built around, each with a test that
+fails if a later edit gives it up:
+
+**No secret enters it.** Every `COPY` names its source. `COPY . .` is how a
+git-ignored `.env` with a real provider key reaches a registry, and the
+repository root has one. Nothing is passed through `ENV` or `ARG` either: a
+build argument survives in layer history, readable by anyone holding the
+image. A `.dockerignore` in each context excludes `.env` and every variant as
+a second defence — nothing depends on it today, which is the point, because on
+the day somebody writes `COPY . .` two things have to go wrong rather than one.
+
+**Nothing migrates on boot.** Alembic owns the schema and applying a migration
+is a decision about a database somebody chose. A container that migrates on
+start makes that decision for them, and makes it once per replica. There is no
+entrypoint script for one to hide in, and the guard asserts that too.
+
+**The process is not root**, and does not own a writable copy of its own code.
+A container that can rewrite its own application is one an attacker can
+persist in.
+
+Dependencies come from a lock file rather than the range list in
+`requirements.txt`, so two builds a month apart install the same bytes. The
+range list still states what the project accepts; the lock states what the
+image is made of.
+
+### The local stack
+
+`compose.yaml` runs backend, client, PostgreSQL and Redis together. Three
+choices in it are load-bearing.
+
+*No credential is written down.* The database password is a required variable
+with no default, so compose refuses to start rather than come up on a password
+that is also in the git history.
+
+*Nothing migrates on its own.* `migrate` sits behind a profile, so `up` cannot
+start it and no service waits on it.
+
+*PostgreSQL and Redis publish no ports.* They exist for the backend, which
+reaches them over the compose network by name. A published 5432 would sit next
+to whatever PostgreSQL the developer already runs, and the failure mode of
+getting that wrong is writing to the wrong database — which is not a failure
+anyone notices immediately.
+
+## Continuous integration (M23)
+
+Two workflows. `tests` is the fast answer to "did that break anything": the
+backend suite on 3.11 and 3.12, the client suite, and a secret scan.
+`integration` is what cannot be answered in-process — PostgreSQL and Redis as
+service containers, and a job that builds the stack, brings it up, applies
+migrations on demand and checks both the API and the client answer.
+
+Neither reads a secret. Neither needs one: the suite blocks outbound
+connections, so a test that tried to reach a real provider fails rather than
+quietly billing someone — and that property only holds while no workflow hands
+it a key to reach one with. The token is read-only and checkout is told not to
+leave it in `.git/config`. Every action is pinned to a commit rather than a
+tag, because a tag is whatever its publisher points at today and whoever can
+move it can run code in a job holding this repository's token.
+
+The backend matrix covers 3.11 because the project declares `>=3.11`, and the
+floor is the version most likely to break unnoticed — nobody develops on it.
+The guard reads both numbers from the files that state them, `pyproject.toml`
+and the `Dockerfile`, so bumping one without the other fails rather than
+drifts.
+
+`scripts/scan-secrets.sh` runs before a push rather than after one, and knows
+two things a generic scanner does not: which file this project keeps its key
+in, and that the file is supposed to be untracked. An untracked `.env` is the
+normal state of a working checkout and is not a finding; a tracked one is the
+whole problem. `.env.example` is exempt from being tracked and not from being
+read. Fixtures that must be key-shaped — the ones proving redaction redacts
+something — carry a marker the scan honours per line and never per file, so
+the next real key pasted into one of those files is still a finding.
+
+What CI is actually worth was visible on its first run: it failed, on two
+defects that passed on every developer machine because those machines had a
+`.env`. One was cosmetic. The other was a real bug — an `AppError` raised
+while resolving a WebSocket's dependencies hit a handler that assumed HTTP and
+crashed instead of closing the socket.
+
 ## Planned components
 
 _This section listed the layers that did not exist yet. Every one of them now
@@ -1078,8 +1168,12 @@ does, so it records where each landed instead._
 
 ## Open questions
 
-- Deployment target? _Still open; M22 is the first milestone that needs an
-  answer._
+- Deployment target? _Answered by M22, and deliberately not by naming a
+  cloud: the unit of deployment is an OCI image that takes its entire
+  configuration from the environment and migrates nothing on boot. That
+  runs under compose, a scheduler, or anything else that can run a
+  container, and picking a provider now would buy nothing and constrain
+  later._
 - Single-tenant or multi-tenant? _Answered by M19: subject-scoped ownership,
   enforced only when a deployment turns it on. Tenancy is per API-key subject,
   not per customer._
