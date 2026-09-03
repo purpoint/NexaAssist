@@ -11,13 +11,39 @@ import { useState, type FormEvent } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { EmptyState, ErrorBanner, Spinner } from '../components/primitives';
+import { WS_URL } from '../config';
+import { useRealtime, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
 import { useConversation } from './useConversation';
 
-export function ConversationScreen({ client }: { client: ApiClient }) {
+export function ConversationScreen({
+  client,
+  socketFactory,
+}: {
+  client: ApiClient;
+  /** Injected only by tests; production uses the global WebSocket. */
+  socketFactory?: SocketFactory;
+}) {
   const conversation = useConversation(client);
   const [email, setEmail] = useState('');
+
+  const realtime = useRealtime(
+    WS_URL,
+    {
+      onDelta: conversation.appendDelta,
+      onComplete: conversation.completeStream,
+      onError: (_code, message) => conversation.failStream(message),
+    },
+    { socketFactory },
+  );
+
+  // Streaming is attempted, never assumed. `ask` returns false when the
+  // socket is not open, and `send` falls back to HTTP in that case.
+  const handleSend = (text: string) =>
+    void conversation.send(text, {
+      stream: realtime.ready ? realtime.ask : undefined,
+    });
 
   const startConversation = async (event: FormEvent) => {
     event.preventDefault();
@@ -82,7 +108,7 @@ export function ConversationScreen({ client }: { client: ApiClient }) {
         <MessageList turns={conversation.turns} sending={conversation.sending} />
       )}
 
-      <Composer disabled={conversation.sending} onSend={conversation.send} />
+      <Composer disabled={conversation.sending} onSend={handleSend} />
     </section>
   );
 }

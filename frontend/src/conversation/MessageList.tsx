@@ -28,8 +28,18 @@ export function MessageList({ turns, sending }: { turns: Turn[]; sending: boolea
       {turns.map((turn) => (
         <li key={turn.id} className={`message message--${turn.role}`}>
           <div className="message__bubble">
-            <p className="message__text">{turn.text}</p>
+            <p className="message__text">
+              {turn.text}
+              {turn.streaming ? <span className="caret" aria-hidden="true" /> : null}
+            </p>
             {turn.role === 'assistant' ? <Citations citations={turn.citations} /> : null}
+            {turn.role === 'assistant' && turn.streamed && !turn.streaming ? (
+              // An absence of sources must not read as "none were needed":
+              // the streaming path answers in prose and produces none.
+              <p className="message__note message__note--quiet">
+                Streamed reply — not drawn from documentation.
+              </p>
+            ) : null}
             {turn.escalated ? (
               <p className="message__note">A support agent has been asked to look.</p>
             ) : null}
@@ -42,7 +52,7 @@ export function MessageList({ turns, sending }: { turns: Turn[]; sending: boolea
           ) : null}
         </li>
       ))}
-      {sending ? (
+      {sending && !turns.some((turn) => turn.streaming) ? (
         <li className="message message--assistant">
           <div className="message__bubble message__bubble--thinking">
             <Spinner label="The assistant is replying" />

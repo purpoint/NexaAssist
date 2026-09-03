@@ -21,6 +21,18 @@ export interface Turn {
   /** Quotable in a support ticket; identifies the request, not its content. */
   traceId?: string | null;
   escalated?: boolean;
+  /**
+   * True for a reply that arrived over the socket.
+   *
+   * Streamed replies come from the realtime path, which answers in prose and
+   * produces no citations -- the grounded pipeline behind the HTTP endpoint is
+   * the one that rebuilds them from retrieval. The flag exists so the UI can
+   * say that rather than let an absence of sources read as "no sources were
+   * needed".
+   */
+  streamed?: boolean;
+  /** True while deltas are still arriving. */
+  streaming?: boolean;
 }
 
 let counter = 0;

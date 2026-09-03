@@ -55,6 +55,15 @@ function messageFor(caught: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
+export interface SendOptions {
+  /**
+   * Stream over the socket when it can. Returns false when it could not, and
+   * the caller falls back to HTTP -- which is the only way a refusal to
+   * record, or a socket that never opened, does not lose the question.
+   */
+  stream?: (question: string, conversationId: string | null) => boolean;
+}
+
 export function useConversation(client: ApiClient) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -118,8 +127,63 @@ export function useConversation(client: ApiClient) {
     [client],
   );
 
+  /** The assistant turn currently being streamed into, if any. */
+  const streamingId = useRef<string | null>(null);
+
+  const appendDelta = useCallback((text: string) => {
+    const target = streamingId.current;
+    if (target === null) return; // A late frame from an abandoned attempt.
+    setTurns((current) =>
+      current.map((turn) =>
+        turn.id === target ? { ...turn, text: turn.text + text } : turn,
+      ),
+    );
+  }, []);
+
+  const completeStream = useCallback(
+    (text: string, streamConversationId: string | null) => {
+      const target = streamingId.current;
+      streamingId.current = null;
+      setSending(false);
+      if (target === null) return;
+      // The complete frame carries the whole answer, so it replaces the
+      // accumulation rather than being appended to it -- otherwise a
+      // duplicated delta would show twice.
+      setTurns((current) =>
+        current.map((turn) =>
+          turn.id === target
+            ? { ...turn, text, status: 'sent' as const, streaming: false }
+            : turn.status === 'pending'
+              ? { ...turn, status: 'sent' as const }
+              : turn,
+        ),
+      );
+      if (streamConversationId && streamConversationId !== conversationId) {
+        setConversationId(streamConversationId);
+        writeStoredId(streamConversationId);
+      }
+    },
+    [conversationId],
+  );
+
+  const failStream = useCallback((message: string) => {
+    const target = streamingId.current;
+    streamingId.current = null;
+    setSending(false);
+    setError(message);
+    setTurns((current) =>
+      current
+        // Drop the empty placeholder: an assistant bubble with no text is
+        // worse than no bubble.
+        .filter((turn) => !(turn.id === target && turn.text === ''))
+        .map((turn) =>
+          turn.status === 'pending' ? { ...turn, status: 'failed' as const } : turn,
+        ),
+    );
+  }, []);
+
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, options: SendOptions = {}) => {
       const trimmed = text.trim();
       if (!trimmed || sending) return;
 
@@ -136,6 +200,27 @@ export function useConversation(client: ApiClient) {
       ]);
       setSending(true);
       setError(null);
+
+      // Try the socket first. It returns false when it could not send, and
+      // the HTTP path below runs instead -- so a closed socket, or a server
+      // that refuses to record, never loses the question.
+      if (options.stream?.(trimmed, conversationId)) {
+        const replyId = nextTurnId('stream');
+        streamingId.current = replyId;
+        setTurns((current) => [
+          ...current,
+          {
+            id: replyId,
+            role: 'assistant',
+            text: '',
+            status: 'pending',
+            citations: [],
+            streamed: true,
+            streaming: true,
+          },
+        ]);
+        return;
+      }
 
       try {
         const reply = await client.sendMessage({
@@ -177,6 +262,7 @@ export function useConversation(client: ApiClient) {
   );
 
   const reset = useCallback(() => {
+    streamingId.current = null;
     writeStoredId(null);
     setConversationId(null);
     setTurns([]);
@@ -193,6 +279,9 @@ export function useConversation(client: ApiClient) {
     send,
     reset,
     loadHistory,
+    appendDelta,
+    completeStream,
+    failStream,
   };
 }
 
