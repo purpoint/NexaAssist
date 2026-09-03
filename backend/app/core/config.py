@@ -129,6 +129,16 @@ class Settings(BaseSettings):
     # reason ``cors_origins`` needs it.
     auth_api_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Request rate limiting. "none" enforces nothing and is the default, so a
+    # service already behind a rate-limiting gateway does not do it twice.
+    # "memory" is per-process; "redis" is shared across processes and reuses
+    # REDIS_URL and REDIS_NAMESPACE.
+    rate_limit_provider: Literal["none", "memory", "redis"] = Field(default="none")
+    # Requests allowed per key per window. The key is the authenticated
+    # subject, so an anonymous deployment shares one bucket.
+    rate_limit_requests: int = Field(default=60, ge=1, le=100_000)
+    rate_limit_window_seconds: int = Field(default=60, ge=1, le=3_600)
+
     # Whether resources are restricted to the subject that created them.
     # "open" enforces nothing and is the default, so a single-tenant
     # deployment behaves exactly as before. "subject" requires authentication,
@@ -196,6 +206,13 @@ class Settings(BaseSettings):
                 "DATABASE_URL must use the postgresql+asyncpg driver, "
                 f"got {scheme!r}."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _redis_rate_limiting_needs_a_url(self) -> Self:
+        """Fail at startup rather than on the first request."""
+        if self.rate_limit_provider == "redis" and self.redis_url is None:
+            raise ValueError("RATE_LIMIT_PROVIDER=redis requires REDIS_URL to be set.")
         return self
 
     @model_validator(mode="after")

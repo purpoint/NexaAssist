@@ -12,9 +12,14 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from app.agent.loop import AgentDecision
 from app.api.v1.realtime import get_streaming_provider, reset_registry
 from app.core.config import Settings
+from app.llm.base import LLMConfig
+from app.llm.providers.static_provider import StaticLLMProvider
 from app.llm.streaming import StaticStreamingProvider
+from app.schemas.intent import IntentAnalysis, IntentCategory
+from app.services.answer import GroundedModelAnswer
 from app.main import create_app
 from app.realtime.conversations import SessionTurnRecorder, TurnRecorder
 from app.services.errors import ConversationNotFoundError
@@ -39,6 +44,7 @@ def client() -> Iterator[TestClient]:
     from app.db import health as health_module
     from app.db import session as session_module
     from app.db.engine import build_engine
+    from app.llm.factory import get_llm_provider
 
     built = build_engine(settings)
     originals = (session_module.get_engine, health_module.get_engine)
@@ -49,6 +55,21 @@ def client() -> Iterator[TestClient]:
     app = create_app(settings)
     app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider(
         ANSWER
+    )
+    # The HTTP assistant path needs a provider too. Without this it resolves
+    # the configured one -- Groq, with a real key, over a real socket -- and
+    # the test passes only because it actually called the vendor.
+    app.dependency_overrides[get_llm_provider] = lambda: StaticLLMProvider(
+        LLMConfig(provider="static", model="static-model"),
+        canned={
+            IntentAnalysis: IntentAnalysis(
+                intent=IntentCategory.BILLING, confidence=0.95, reason="fixture"
+            ),
+            AgentDecision: AgentDecision(action="answer", answer="Under Billing."),
+            GroundedModelAnswer: GroundedModelAnswer(
+                answered=True, answer="Under Billing.", cited_sources=[]
+            ),
+        },
     )
     try:
         with TestClient(app) as test_client:

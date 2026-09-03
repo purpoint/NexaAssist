@@ -244,8 +244,14 @@ def test_a_redis_url_with_a_password_is_redacted_from_logs() -> None:
     assert "***REDACTED***" in redacted
 
 
-def test_only_the_redis_backend_imports_redis() -> None:
-    """The same boundary the Groq SDK has: one module, named in requirements."""
+def test_only_the_redis_backends_import_redis() -> None:
+    """The same boundary the Groq SDK has: named modules, listed in requirements.
+
+    Two modules now, not one. M19 added a Redis-backed rate limiter, which is a
+    second legitimate user of the client -- a queue and a counter share a
+    server, not a purpose. The pin is widened to the new expected state rather
+    than relaxed: any third module still fails it.
+    """
     offenders = set()
     for path in BACKEND_APP.rglob("*.py"):
         tree = ast.parse(path.read_text())
@@ -258,4 +264,4 @@ def test_only_the_redis_backend_imports_redis() -> None:
                 continue
             if any(n == "redis" or n.startswith("redis.") for n in names):
                 offenders.add(path.name)
-    assert sorted(offenders) == ["redis_queue.py"]
+    assert sorted(offenders) == ["redis_limiter.py", "redis_queue.py"]

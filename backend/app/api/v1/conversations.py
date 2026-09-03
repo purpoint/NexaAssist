@@ -18,7 +18,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.identity import require_identity
+from app.api.v1.limits import enforce_rate_limit
 from app.auth.authorization import Authorizer
 from app.auth.factory import get_authorizer
 from app.auth.identity import RequestIdentity
@@ -56,14 +56,15 @@ def get_customer_service(
     status_code=status.HTTP_201_CREATED,
     summary="Open a conversation",
     responses={
-        401: {"model": ErrorResponse, "description": "Authentication is required."}
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
     },
 )
 async def start_conversation(
     payload: ConversationStartRequest,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
     customers: Annotated[CustomerService, Depends(get_customer_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> ConversationResponse:
     """Open a conversation, creating the customer on first contact."""
@@ -80,6 +81,7 @@ async def start_conversation(
     summary="Fetch a conversation",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
         404: {
             "model": ErrorResponse,
             "description": (
@@ -92,7 +94,7 @@ async def start_conversation(
 async def read_conversation(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> ConversationResponse:
     """Return a conversation's identity.
@@ -112,6 +114,7 @@ async def read_conversation(
     summary="Read a conversation's turns",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
         404: {
             "model": ErrorResponse,
             "description": (
@@ -124,7 +127,7 @@ async def read_conversation(
 async def read_history(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
     limit: Annotated[int | None, Query(ge=1, le=MAX_HISTORY)] = None,
 ) -> ConversationHistoryResponse:

@@ -10,7 +10,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.identity import require_identity
+from app.api.v1.limits import enforce_rate_limit
 from app.auth.authorization import Authorizer
 from app.auth.factory import get_authorizer
 from app.auth.identity import RequestIdentity
@@ -36,13 +36,14 @@ def get_ticket_service(
     status_code=status.HTTP_201_CREATED,
     summary="Raise a support ticket",
     responses={
-        401: {"model": ErrorResponse, "description": "Authentication is required."}
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
     },
 )
 async def create_ticket(
     payload: TicketCreateRequest,
     service: Annotated[TicketService, Depends(get_ticket_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> TicketResponse:
     """Record a ticket, creating the customer on first contact."""
@@ -61,6 +62,7 @@ async def create_ticket(
     summary="Fetch one ticket",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
         404: {
             "model": ErrorResponse,
             "description": (
@@ -73,7 +75,7 @@ async def create_ticket(
 async def get_ticket(
     ticket_id: uuid.UUID,
     service: Annotated[TicketService, Depends(get_ticket_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> TicketResponse:
     """Return a single ticket by identifier."""
@@ -87,12 +89,13 @@ async def get_ticket(
     response_model=TicketListResponse,
     summary="List tickets",
     responses={
-        401: {"model": ErrorResponse, "description": "Authentication is required."}
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
     },
 )
 async def list_tickets(
     service: Annotated[TicketService, Depends(get_ticket_service)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
     status_filter: Annotated[
         TicketStatus | None, Query(alias="status", description="Restrict to one status.")

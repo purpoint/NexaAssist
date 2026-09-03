@@ -16,6 +16,7 @@ from app.api.v1.identity import API_KEY_HEADER
 from app.core.config import Settings
 from app.llm.base import LLMConfig
 from app.llm.providers.static_provider import StaticLLMProvider
+from app.llm.streaming import StaticStreamingProvider
 from app.main import create_app
 from app.rag.embeddings import HashingEmbeddingProvider
 from app.schemas.intent import IntentAnalysis, IntentCategory
@@ -62,6 +63,7 @@ def build(scoped: bool) -> Iterator[TestClient]:
         auth_api_keys=KEYS,
         authz_provider="subject" if scoped else "open",
     )
+    from app.api.v1.realtime import get_streaming_provider
     from app.auth.factory import get_authenticator, get_authorizer
     from app.auth.factory import build_authenticator, build_authorizer
     from app.db import health as health_module
@@ -81,6 +83,12 @@ def build(scoped: bool) -> Iterator[TestClient]:
     app.dependency_overrides[get_llm_provider] = canned
     app.dependency_overrides[get_authenticator] = lambda: build_authenticator(settings)
     app.dependency_overrides[get_authorizer] = lambda: build_authorizer(settings)
+    # Without this the socket resolves the *configured* provider, which in a
+    # developer environment is Groq with a real key -- a real, billable call
+    # from the test suite.
+    app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider(
+        "Under Billing."
+    )
     try:
         with TestClient(app) as client:
             yield client

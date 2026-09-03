@@ -18,7 +18,9 @@ pydantic[email]>=2.4,<3.0
 pgvector>=0.3,<1.0
 # Local ONNX embeddings: no API key, no per-call network.
 fastembed>=0.4,<1.0
-# Job queue backend. Async support ships in the same package (redis.asyncio),
-# so there is no separate aioredis dependency. Only app/jobs/redis_queue.py
-# may import it -- the rest of the code depends on the JobQueue protocol.
+# Job queue and rate-limit backend. Async support ships in the same package
+# (redis.asyncio), so there is no separate aioredis dependency. Only
+# app/jobs/redis_queue.py and app/ratelimit/redis_limiter.py may import it --
+# the rest of the code depends on the JobQueue and RateLimiter protocols.
+# Enforced by a test, not just by this comment.
 redis>=5.0,<7.0

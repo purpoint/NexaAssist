@@ -63,13 +63,43 @@ def postgres_reachable(url: str = TEST_DATABASE_URL) -> bool:
 
 
 @pytest.fixture(autouse=True)
-def no_network() -> None:
-    """Override the inherited guard for this package only.
+def no_network(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Narrow the suite-wide guard rather than removing it.
 
-    Resolution picks the definition closest to the test, so the guard stays
-    fully active for every other directory.
+    These tests need real sockets -- PostgreSQL is a real server -- so the
+    inherited ``no_network`` fixture cannot stand. Replacing it with "anything
+    goes" is what let a test reach api.groq.com with the developer's real key,
+    billed and unnoticed, because the one guard that would have caught it was
+    the one this package switched off.
+
+    So: localhost only. A database and a Redis on this machine are reachable;
+    anything off it is not.
     """
-    return None
+
+    def blocked(host: object) -> None:
+        raise RuntimeError(
+            f"Only local connections are allowed in the test suite; got {host!r}."
+        )
+
+    def check(address: object) -> None:
+        if isinstance(address, tuple) and address:
+            host = address[0]
+            if host not in {"localhost", "127.0.0.1", "::1", ""}:
+                blocked(host)
+
+    real_connect = socket.socket.connect
+    real_create = socket.create_connection
+
+    def guarded_connect(self: socket.socket, address: object) -> object:
+        check(address)
+        return real_connect(self, address)
+
+    def guarded_create(address: object, *args: object, **kwargs: object) -> object:
+        check(address)
+        return real_create(address, *args, **kwargs)
+
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
+    monkeypatch.setattr(socket, "create_connection", guarded_create)
 
 
 @pytest.fixture(autouse=True)

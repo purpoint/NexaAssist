@@ -19,7 +19,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.identity import require_identity
+from app.api.v1.limits import enforce_rate_limit
 from app.auth.authorization import Authorizer
 from app.auth.factory import get_authorizer
 from app.auth.identity import RequestIdentity
@@ -77,6 +77,7 @@ def get_assistant_service(
     summary="Answer a customer message",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
         503: {"model": ErrorResponse, "description": "A dependency is unavailable."},
     },
 )
@@ -84,7 +85,7 @@ async def answer_message(
     payload: AssistantMessageRequest,
     service: Annotated[AssistantService, Depends(get_assistant_service)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
-    identity: Annotated[RequestIdentity, Depends(require_identity)],
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> AssistantMessageResponse:
     """Classify, answer, apply policy, and escalate if a person is needed.
