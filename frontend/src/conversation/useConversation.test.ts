@@ -151,6 +151,58 @@ describe('sending', () => {
   });
 });
 
+describe('authentication', () => {
+  it('reports a refusal separately from an ordinary error', async () => {
+    // A 401 is fixable by the user and the fix is a specific one; collapsing
+    // it into the error banner says something went wrong without saying what
+    // to do about it.
+    const client = stubClient({
+      sendMessage: vi
+        .fn()
+        .mockRejectedValue(new ApiError('authentication_required', 'Auth needed.', 401)),
+    });
+    const { result } = renderHook(() => useConversation(client));
+
+    await act(async () => {
+      await result.current.send('hello');
+    });
+
+    expect(result.current.authRequired).toBe(true);
+  });
+
+  it('does not mistake an ordinary failure for a refusal', async () => {
+    const client = stubClient({
+      sendMessage: vi.fn().mockRejectedValue(ApiError.unreachable()),
+    });
+    const { result } = renderHook(() => useConversation(client));
+
+    await act(async () => {
+      await result.current.send('hello');
+    });
+
+    expect(result.current.authRequired).toBe(false);
+    expect(result.current.error).not.toBeNull();
+  });
+
+  it('clears the refusal once a request succeeds', async () => {
+    const sendMessage = vi
+      .fn()
+      .mockRejectedValueOnce(new ApiError('authentication_required', 'Auth.', 401))
+      .mockResolvedValueOnce(reply());
+    const { result } = renderHook(() => useConversation(stubClient({ sendMessage })));
+
+    await act(async () => {
+      await result.current.send('first');
+    });
+    expect(result.current.authRequired).toBe(true);
+
+    await act(async () => {
+      await result.current.send('second');
+    });
+    expect(result.current.authRequired).toBe(false);
+  });
+});
+
 describe('conversations', () => {
   it('starts one and remembers it', async () => {
     const client = stubClient({

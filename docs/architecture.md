@@ -1013,8 +1013,24 @@ ConversationScreen
 - **A streamed reply says it is not drawn from documentation.** The realtime
   path answers in prose and produces no citations; without saying so, absent
   sources would read as "none were needed", which is a quieter kind of lie.
-- **What it is not:** one screen and no router, and no way to supply an API key
-  from the UI — which matters the moment M19 authentication is switched on.
+- **The key is entered in the browser and stored there.** It is sent as a
+  header, never in a URL where proxies, history and referrers would see it, and
+  the panel is told only *whether* a key exists, never what it is. Storage is
+  `localStorage`, which anything with script access to the origin can read —
+  stated in the UI rather than glossed, because the deeper issue is that a
+  browser client holds a long-lived shared key at all. Per-user short-lived
+  tokens would be the better model and are a backend change.
+- **A 401 opens the panel itself.** Being told "authentication is required" and
+  then having to hunt for where to type the key is a bad way to learn a
+  deployment is protected, and the panel cannot be dismissed while a request is
+  blocked.
+- **The socket carries no key**, because a browser cannot set a header on a
+  WebSocket handshake. With authentication on, HTTP is authenticated and the
+  socket is not; under scoped authorization the server refuses to record a
+  realtime turn and the client falls back to HTTP, which answers but does not
+  stream.
+- **What it is not:** one screen and no router — nothing yet needs a second
+  route.
 
 ### Migrations
 

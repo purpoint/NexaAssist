@@ -49,6 +49,10 @@ function toTurn(message: ConversationMessage): Turn {
   };
 }
 
+function isUnauthenticated(caught: unknown): boolean {
+  return caught instanceof ApiError && caught.unauthenticated;
+}
+
 function messageFor(caught: unknown): string {
   if (caught instanceof ApiError) return caught.message;
   // Never render an unknown throwable: it may carry a stack.
@@ -70,6 +74,10 @@ export function useConversation(client: ApiClient) {
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Distinct from `error`: a 401 is fixable by the user, and the fix is a
+  // specific one. Collapsing it into the error banner would tell somebody
+  // that something went wrong without telling them what to do about it.
+  const [authRequired, setAuthRequired] = useState(false);
 
   // Held in a ref so a re-render never re-triggers resumption.
   const resumed = useRef(false);
@@ -82,6 +90,7 @@ export function useConversation(client: ApiClient) {
         setTurns(history.messages.map(toTurn));
         setConversationId(id);
         setError(null);
+        setAuthRequired(false);
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 404) {
           // The stored id is stale -- a cleared database, or a different
@@ -91,6 +100,7 @@ export function useConversation(client: ApiClient) {
           setConversationId(null);
           setTurns([]);
         } else {
+          setAuthRequired(isUnauthenticated(caught));
           setError(messageFor(caught));
         }
       } finally {
@@ -116,8 +126,10 @@ export function useConversation(client: ApiClient) {
         setConversationId(conversation.id);
         setTurns([]);
         setError(null);
+        setAuthRequired(false);
         return conversation.id;
       } catch (caught) {
+        setAuthRequired(isUnauthenticated(caught));
         setError(messageFor(caught));
         return null;
       } finally {
@@ -200,6 +212,7 @@ export function useConversation(client: ApiClient) {
       ]);
       setSending(true);
       setError(null);
+      setAuthRequired(false);
 
       // Try the socket first. It returns false when it could not send, and
       // the HTTP path below runs instead -- so a closed socket, or a server
@@ -253,6 +266,7 @@ export function useConversation(client: ApiClient) {
             turn.id === pendingId ? { ...turn, status: 'failed' as const } : turn,
           ),
         );
+        setAuthRequired(isUnauthenticated(caught));
         setError(messageFor(caught));
       } finally {
         setSending(false);
@@ -267,6 +281,7 @@ export function useConversation(client: ApiClient) {
     setConversationId(null);
     setTurns([]);
     setError(null);
+    setAuthRequired(false);
   }, []);
 
   return {
@@ -275,6 +290,7 @@ export function useConversation(client: ApiClient) {
     sending,
     loading,
     error,
+    authRequired,
     start,
     send,
     reset,

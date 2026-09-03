@@ -7,7 +7,7 @@
  * stored id.
  */
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { EmptyState, ErrorBanner, Spinner } from '../components/primitives';
@@ -20,12 +20,19 @@ import { useConversation } from './useConversation';
 export function ConversationScreen({
   client,
   socketFactory,
+  onAuthRequired,
 }: {
   client: ApiClient;
   /** Injected only by tests; production uses the global WebSocket. */
   socketFactory?: SocketFactory;
+  /** Told when a request was refused for want of a credential. */
+  onAuthRequired?: (required: boolean) => void;
 }) {
   const conversation = useConversation(client);
+
+  useEffect(() => {
+    onAuthRequired?.(conversation.authRequired);
+  }, [conversation.authRequired, onAuthRequired]);
   const [email, setEmail] = useState('');
 
   const realtime = useRealtime(
@@ -92,7 +99,11 @@ export function ConversationScreen({
         </form>
       )}
 
-      {conversation.error ? <ErrorBanner message={conversation.error} /> : null}
+      {/* The key panel already explains a 401 and offers the fix; a banner
+          beside it would say the same thing twice. */}
+      {conversation.error && !conversation.authRequired ? (
+        <ErrorBanner message={conversation.error} />
+      ) : null}
 
       {conversation.loading && conversation.turns.length === 0 ? (
         <div className="conversation__loading">

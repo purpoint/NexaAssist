@@ -59,6 +59,12 @@ describe('requests', () => {
     expect(keyed.fetchImpl.mock.calls[0][1].headers[API_KEY_HEADER]).toBe('secret-key');
   });
 
+  it('never puts the key in the url, where proxies and history would see it', async () => {
+    const { client, fetchImpl } = clientReturning(respondWith(200, {}), 'secret-key');
+    await client.getHistory('abc', 5);
+    expect(String(fetchImpl.mock.calls[0][0])).not.toContain('secret-key');
+  });
+
   it('builds conversation paths from the id', async () => {
     const { client, fetchImpl } = clientReturning(respondWith(200, { messages: [] }));
     await client.getHistory('abc', 5);

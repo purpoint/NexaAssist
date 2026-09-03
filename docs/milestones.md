@@ -330,10 +330,15 @@ M18.
 48 frontend tests; `tsc --noEmit` and a production build pass.
 
 **What it is not:** there is one screen and no router, so "routing" in the
-original M18 wording is unbuilt — nothing yet needs a second route. There is no
-UI for supplying an API key; the client sends one only when built with it
-configured, which is enough for the default open deployment and not enough once
-M19's authentication is switched on.
+original M18 wording is unbuilt — nothing yet needs a second route.
+
+A key entry point was added after M21: the client stores a key, sends it on
+every request, and opens the panel by itself when a request comes back 401.
+**The socket is still unauthenticated** — a browser cannot set a header on a
+WebSocket handshake — so with authentication on, HTTP carries the key and the
+socket does not. Under scoped authorization the server refuses to record a
+realtime turn and the client falls back to HTTP, which works but streams
+nothing. That is the remaining Outstanding item.
 
 ## M22 — Docker / Production-like Environment
 
@@ -364,5 +369,3 @@ are visible instead of buried in the milestone that last deferred them.
       WebSocket handshake, so this needs a decision about the credential
       transport (a subprotocol, a first-frame handshake, or a short-lived
       ticket) before it can be built.
-- [ ] **An API-key entry point in the frontend.** Needed before M19
-      authentication can be enabled for a browser client.
