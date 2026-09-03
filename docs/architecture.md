@@ -1,25 +1,36 @@
 # Architecture
 
-> Placeholder — records the intended shape of the system. Nothing below the
-> "Current state" section is implemented yet.
+> Records the shape of the system as built. Each section names the milestone
+> that introduced it; sections appear in milestone order.
 
 ## Current state
 
 ```
 Client (React + TS)  ──HTTP──▶  FastAPI service
-                                  ├── GET  /api/v1/health
-                                  ├── GET  /api/v1/ready
-                                  ├── POST /api/v1/intent/analyze
-                                  ├── POST /api/v1/documents
-                                  ├── POST /api/v1/documents/answer
-                                  ├── POST /api/v1/tickets
-                                  ├── GET  /api/v1/tickets
-                                  ├── GET  /api/v1/tickets/{id}
-                                  └── GET  /api/health   (deprecated alias)
+       │                          ├── GET  /api/v1/health
+       │                          ├── GET  /api/v1/ready
+       │                          ├── POST /api/v1/intent/analyze
+       │                          ├── POST /api/v1/documents
+       │                          ├── GET  /api/v1/documents
+       │                          ├── GET  /api/v1/documents/{id}
+       │                          ├── POST /api/v1/documents/answer
+       │                          ├── POST /api/v1/tickets
+       │                          ├── GET  /api/v1/tickets
+       │                          ├── GET  /api/v1/tickets/{id}
+       │                          ├── POST /api/v1/assistant/messages
+       │                          ├── POST /api/v1/conversations
+       │                          ├── GET  /api/v1/conversations/{id}
+       │                          ├── GET  /api/v1/conversations/{id}/messages
+       │                          └── GET  /api/health   (deprecated alias)
+       │
+       └────ws────▶  GET /api/v1/ws   (not described by OpenAPI)
 ```
 
-That is the entire runtime today: one HTTP service exposing a health check, and
-a frontend shell that does not yet call it.
+Behind that surface: a classify → route → policy → escalate pipeline (M17) over
+an agent, tools, workflows and a knowledge base; PostgreSQL with pgvector; a
+Redis-backed job queue; tracing, metrics and cost accounting; optional
+authentication, ownership and rate limiting; and a React client that uses both
+transports.
 
 ## API versioning
 
@@ -41,9 +52,10 @@ identical, and a test asserts that they stay identical.
   struck-through in `/docs`.
 - It is gated by `ENABLE_LEGACY_HEALTH_ROUTE` (default `true`). Set it to
   `false` to confirm nothing still depends on it.
-- **It is removed in M18**, along with the setting and its tests. (M1 named
-  M2 for this; M2 became the LLM foundation, so removal moved to the first
-  milestone with a real API consumer rather than being dropped silently.)
+- **Still to be removed**, along with the setting and its tests. Scheduled for
+  M2, then M18, and deferred both times for want of a real API consumer. M21
+  shipped one and it does not use the alias, so the reason to keep waiting has
+  gone; it is tracked under _Outstanding_ in `docs/milestones.md`.
 
 ## Error handling
 
@@ -57,8 +69,9 @@ Every error leaves the API in one shape, `app.schemas.common.ErrorResponse`:
 `app.core.exceptions.register_exception_handlers` cover two cases: `AppError`
 subclasses raised deliberately by application code, and Starlette's
 `HTTPException` (which is what an unmatched route raises). Request-validation
-errors keep FastAPI's default 422 body until an endpoint actually accepts a
-request body.
+errors join them: M20 replaced FastAPI's default 422 body, which embeds the
+offending `input` and so returned a customer's message back to them, with the
+same envelope carrying field paths only.
 
 ## Logging
 
@@ -89,8 +102,15 @@ one format and level. Level comes from `LOG_LEVEL`.
 | `app.db` | Connection pool, session lifecycle, and the declarative foundation. |
 | `app.api.v1` | Version 1 HTTP endpoints. One module per resource. |
 | `app.schemas` | Request/response models — the API contract. `common.py` holds shapes used by more than one endpoint. |
-| `app.models` | Persistence models. Empty until a database is introduced. |
-| `app.services` | Domain logic and orchestration. Empty until workflows are introduced. |
+| `app.models` | Persistence models: customers, tickets, documents and chunks, review items, conversations. |
+| `app.services` | Domain logic and orchestration, including the M17 assistant pipeline. |
+| `app.agent`, `app.tools`, `app.workflows`, `app.routing`, `app.policy`, `app.escalation` | The answering machinery: M6–M11. |
+| `app.jobs` | Background work behind a `JobQueue` protocol (M13). |
+| `app.realtime` | The WebSocket wire contract and its connections (M14). |
+| `app.evaluation` | Cases, checks and the harness that runs them (M15). |
+| `app.observability` | Traces, metrics, cost accounting, and component diagnostics (M16, M20). |
+| `app.auth` | Authentication and authorization (M19). |
+| `app.ratelimit` | Request limiting behind a backend-neutral protocol (M19). |
 
 ## Language-model layer
 
@@ -852,6 +872,144 @@ read      GET    /api/v1/conversations/{id}/messages
   security hardening moved after it; nothing here should be treated as
   access-controlled.
 
+### Production hardening (M19)
+
+```
+request ─▶ require_identity ─▶ enforce_rate_limit ─▶ route ─▶ service
+              │                       │                          │
+        Authenticator            RateLimiter               OwnerScope
+              │
+        RequestIdentity ──────────────────────────────────────┘
+```
+
+- **One identity type, never `RequestIdentity | None`.** A caller that must
+  check for `None` before asking anything eventually forgets, and the forgetful
+  path is the one that treats an anonymous request as privileged. An
+  unauthenticated request has an identity — an anonymous one, and it says so.
+- **The default is not to authenticate**, so a deployment that has not opted in
+  behaves exactly as it did before. "This deployment does not authenticate" is
+  a real chosen mode implemented against the same protocol, so no route needs a
+  branch for it, and a key presented to such a deployment is ignored rather
+  than rejected.
+- **A missing credential and a wrong one are indistinguishable.** Same status,
+  same message. A client that can tell them apart learns nothing useful; an
+  attacker learns the key was the right shape.
+- **Keys are compared without an early exit.** Returning on the first differing
+  byte leaks, through timing, how much of a key was right. A failed attempt
+  logs a 12-character one-way fingerprint, a success logs the subject — the key
+  appears in neither, nor in an error body, nor on a span.
+- **An ownership failure returns the resource's own not-found error.** A
+  distinct 403 would confirm the resource exists, which is the fact being
+  protected; the difference is recorded only in the log.
+- **Unowned rows are refused under scoping, not shared.** Rows predating
+  ownership carry no owner, and letting every authenticated subject read all of
+  them would be worse than losing access to them. Correspondingly the open
+  authorizer stamps *no* owner, so enabling scoping later cannot hand old rows
+  to whoever happens to share a subject.
+- **A scoped listing filters in the database**, not after fetching: filtering
+  afterwards returns short pages and reads the rows it means to hide.
+- **Rate limiting is keyed by subject, not by address.** A subject is what the
+  deployment issued and can revoke; an address is shared by everyone behind one
+  NAT and trivially changed by anyone who minds.
+- **A fixed window, chosen deliberately.** One integer per key per window, and
+  the same key gives the same answer wherever it is evaluated. Its known
+  weakness — a burst straddling a boundary — is a documented trade for an
+  implementation whose failure modes are obvious.
+- **An unreachable Redis allows the request.** Rate limiting protects capacity;
+  it is not an authorization control, so failing closed would turn a cache
+  outage into a total one.
+- **The WebSocket carries no identity**, so under scoping it refuses to record
+  a turn rather than writing unscoped. Fail closed, and the client falls back
+  to HTTP.
+
+### Observability and operations (M20)
+
+```
+request ─▶ span (M16) ─▶ metrics ─▶ log line carrying the trace id
+                            │
+   /ready ─▶ components: database · job queue · provider · limiter · auth
+```
+
+- **Metrics are separate from traces.** A trace answers "what happened in this
+  request"; a metric answers "how often, and how slow, across all of them".
+  Neither has to carry the other's shape.
+- **Cardinality is the failure this is built around.** A metrics system dies
+  from unbounded labels long before it dies from volume: one conversation id in
+  a label and every request creates a series. Label values go through M16's
+  attribute rule, so prose becomes `<omitted>`, and each metric caps its
+  distinct combinations — past the cap the series is dropped and logged
+  *once*, because a cardinality explosion must not also be a log explosion.
+- **Recorded at the seams that already existed.** The M16 wrappers count tool
+  runs, model calls and handler outcomes; nothing gained a new integration
+  point.
+- **Only the database can make the service unready.** Everything else is
+  reported. A queue outage does not stop the service answering, so failing
+  readiness for it would remove a working process from a load balancer and turn
+  a partial outage into a total one — which is why `degraded` exists as a
+  status distinct from `unavailable`.
+- **Nothing probes the model provider over the network.** A readiness scrape
+  that calls a paid vendor spends money on every poll and rate-limits the thing
+  it is meant to protect, so the provider is reported by configuration.
+- **A probe that raises is a probe that took the service down with it**, so a
+  failing one is caught and reported as degraded. No probe surfaces a URL, a
+  host, a credential, SQL, or a driver message.
+- **Every log record carries a trace id.** Correlation that appears on spans
+  but not on the line written beside them leaves an incident as two piles of
+  text. Records outside any span get `-`, so the format never fails at the
+  moment you most want a log line.
+- **Configured credentials are registered as literals to scrub.** The pattern
+  rules recognise provider keys, bearer tokens and connection strings by shape;
+  a shared API key looks like nothing in particular, so it is registered
+  explicitly and survives a third-party traceback.
+- **Validation errors do not echo the request.** FastAPI's default 422 body
+  embeds the offending `input`, so a malformed request carrying a customer's
+  message returned that message straight back. They now render through
+  `ErrorResponse` with field paths only — sanitised without being useless.
+
+### Frontend (M21)
+
+```
+ConversationScreen
+   ├─ useConversation ─┬─ ApiClient   POST /assistant/messages  (grounded)
+   │                   └─ useRealtime ws /ws  ask ▸ delta… ▸ complete
+   └─ useReadiness ────── GET /ready
+```
+
+- **The contract is transcribed, not invented.** Every type mirrors a schema
+  the API publishes; where the two would differ the backend wins, because a
+  frontend type that disagrees with the server is a bug that only appears in
+  production.
+- **The client returns typed data or throws one error type.** There is no third
+  outcome: a caller that must check both a return value and an exception
+  eventually forgets one. A network failure, an unparseable body and a 404 all
+  arrive the same way, so an unreadable proxy page never becomes raw markup on
+  screen.
+- **A question appears before the server has seen it**, carrying a `pending`
+  status so the optimism is visible rather than a lie. When sending fails the
+  question *stays*, marked undelivered — discarding what somebody typed because
+  the network hiccuped is the worse outcome.
+- **A conversation is optional.** The backend answers without one. A stored id
+  that the server no longer knows is forgotten rather than shown as a permanent
+  error nobody can act on; a server that is merely unreachable does not trigger
+  that, because being unreachable says nothing about whether the conversation
+  exists.
+- **Nothing is rendered as markup.** A reply is model output and a citation is
+  document content — exactly what an attacker would like turned into HTML.
+- **Streaming is attempted, never assumed.** `ask` returns false when the socket
+  cannot take the question, and the HTTP path runs instead, so a closed socket
+  or a refusal to record never loses it. Reconnection backs off and *stops*: a
+  client that retries forever hammers an outage, and the cap is what makes the
+  fallback a decision rather than an accident.
+- **Duplication is guarded at both ends.** The socket ignores any delta outside
+  an open question, so a late frame cannot append itself to the next answer;
+  and the `complete` frame *replaces* the accumulated text rather than being
+  appended to it, because it carries the whole answer.
+- **A streamed reply says it is not drawn from documentation.** The realtime
+  path answers in prose and produces no citations; without saying so, absent
+  sources would read as "none were needed", which is a quieter kind of lie.
+- **What it is not:** one screen and no router, and no way to supply an API key
+  from the UI — which matters the moment M19 authentication is switched on.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
@@ -878,16 +1036,23 @@ chain is far cheaper to catch before a merge than after.
 
 ## Planned components
 
-_None of these exist yet; listed so the module map above has a rationale._
+_This section listed the layers that did not exist yet. Every one of them now
+does, so it records where each landed instead._
 
-- Agent orchestration layer
-- Retrieval / knowledge layer
-- Relational persistence
-- Authentication and tenancy
-- Workflow definition and execution engine
+- Agent orchestration layer — M7, over the M6 tools
+- Retrieval / knowledge layer — M5, pgvector beside the relational data
+- Relational persistence — M3, Alembic-owned
+- Workflow definition and execution engine — M9
+- Caching and background jobs — M13
+- Authentication and tenancy — M19, both off by default
 
 ## Open questions
 
-- Deployment target?
-- Single-tenant or multi-tenant?
-- Synchronous request/response only, or streaming and async jobs?
+- Deployment target? _Still open; M22 is the first milestone that needs an
+  answer._
+- Single-tenant or multi-tenant? _Answered by M19: subject-scoped ownership,
+  enforced only when a deployment turns it on. Tenancy is per API-key subject,
+  not per customer._
+- Synchronous request/response only, or streaming and async jobs? _Answered:
+  all three. Synchronous over HTTP, streamed prose over the M14 socket, and
+  deferred work through the M13 queue._

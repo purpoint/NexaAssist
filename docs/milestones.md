@@ -367,5 +367,3 @@ are visible instead of buried in the milestone that last deferred them.
       ticket) before it can be built.
 - [ ] **An API-key entry point in the frontend.** Needed before M19
       authentication can be enabled for a browser client.
-- [ ] **`docs/architecture.md` has no M19–M21 sections.** Every milestone
-      through M18 records its design decisions there; these three do not yet.
