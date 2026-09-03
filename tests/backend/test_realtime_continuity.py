@@ -51,6 +51,10 @@ class Recording:
     def __init__(self, error: Exception | None = None) -> None:
         self._error = error
         self.turns: list[tuple[uuid.UUID, MessageRole, str]] = []
+        self.scope: object = None
+
+    def scope_to(self, scope: object) -> None:
+        self.scope = scope
 
     async def record(
         self, conversation_id: uuid.UUID, role: MessageRole, content: str
@@ -65,6 +69,9 @@ class FailingLate:
 
     def __init__(self) -> None:
         self.turns: list[MessageRole] = []
+
+    def scope_to(self, scope: object) -> None:
+        return None
 
     async def record(
         self, conversation_id: uuid.UUID, role: MessageRole, content: str

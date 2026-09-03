@@ -136,6 +136,14 @@ class Settings(BaseSettings):
     rate_limit_requests: int = Field(default=60, ge=1, le=100_000)
     rate_limit_window_seconds: int = Field(default=60, ge=1, le=3_600)
 
+    # Where short-lived WebSocket tickets live. "memory" is correct for a
+    # single worker; "redis" is required for several, since a ticket issued by
+    # one must be redeemable by another. Reuses REDIS_URL / REDIS_NAMESPACE.
+    realtime_ticket_store: Literal["memory", "redis"] = Field(default="memory")
+    # How long a ticket is valid. Long enough to open a socket, short enough
+    # that one leaked into a proxy log is already useless.
+    realtime_ticket_ttl_seconds: int = Field(default=60, ge=5, le=600)
+
     # Whether resources are restricted to the subject that created them.
     # "open" enforces nothing and is the default, so a single-tenant
     # deployment behaves exactly as before. "subject" requires authentication,
@@ -208,6 +216,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must use the postgresql+asyncpg driver, "
                 f"got {scheme!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _redis_tickets_need_a_url(self) -> Self:
+        """Fail at startup rather than when the first socket connects."""
+        if self.realtime_ticket_store == "redis" and self.redis_url is None:
+            raise ValueError(
+                "REALTIME_TICKET_STORE=redis requires REDIS_URL to be set."
             )
         return self
 

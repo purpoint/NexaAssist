@@ -19,12 +19,18 @@ the connection:
   an error worth logging as one.
 """
 
-from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
+from app.api.v1.limits import enforce_rate_limit
 from app.auth.authorization import Authorizer
-from app.auth.factory import get_authorizer
+from app.auth.base import Authenticator
+from app.auth.factory import get_authenticator, get_authorizer, get_ticket_store
+from app.auth.identity import RequestIdentity
+from app.auth.tickets import TicketStore
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.llm.streaming import StreamingLLMProvider, build_streaming_provider
@@ -40,6 +46,8 @@ from app.realtime.envelope import (
     parse_client_message,
 )
 from app.realtime.errors import RealtimeCapacityError, RealtimeProtocolError
+from app.schemas.common import ErrorResponse
+from app.schemas.realtime import RealtimeTicketResponse
 
 logger = get_logger(__name__)
 
@@ -49,6 +57,7 @@ router = APIRouter(tags=["realtime"])
 # standard, so a client library reports them without special-casing us.
 CLOSE_AT_CAPACITY = 1008
 CLOSE_TOO_LARGE = 1009
+CLOSE_UNAUTHENTICATED = 1008
 
 _registry: ConnectionRegistry | None = None
 
@@ -84,17 +93,73 @@ def get_streaming_provider() -> StreamingLLMProvider:
     return build_streaming_provider(get_settings())
 
 
-def get_turn_recorder(
-    authorizer: Authorizer = Depends(get_authorizer),
-) -> TurnRecorder:
+def get_turn_recorder() -> TurnRecorder:
     """How realtime turns reach the database.
 
     A dependency so a test can substitute one, and so the socket never holds a
-    session: the recorder opens a short-lived one per turn. The authorizer is
-    passed in so a deployment that scopes by subject refuses the write rather
-    than performing it unscoped -- a socket carries no identity.
+    session: the recorder opens a short-lived one per turn. It is handed the
+    scope for *this* connection at connect time, once the ticket has said who
+    is asking.
     """
-    return SessionTurnRecorder(authorizer)
+    return SessionTurnRecorder()
+
+
+@router.post(
+    "/ws/ticket",
+    response_model=RealtimeTicketResponse,
+    summary="Mint a ticket for a WebSocket handshake",
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        429: {"model": ErrorResponse, "description": "Rate limit exceeded."},
+    },
+)
+async def issue_ticket(
+    identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
+    tickets: Annotated[TicketStore, Depends(get_ticket_store)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RealtimeTicketResponse:
+    """Exchange an authenticated HTTP request for a short-lived ticket.
+
+    This is the only place the two credentials meet, and they meet over HTTP
+    where a header carries the key. The ticket is what reaches the URL, and it
+    is short-lived, single-use, opaque and bound to this subject -- so the key
+    itself never appears in a query string, a proxy log or a browser history.
+    """
+    return RealtimeTicketResponse(
+        ticket=await tickets.issue(identity.subject),
+        expires_in_seconds=settings.realtime_ticket_ttl_seconds,
+    )
+
+
+async def authenticate_socket(
+    ticket: str | None,
+    authenticator: Authenticator,
+    tickets: TicketStore,
+) -> RequestIdentity | None:
+    """Resolve the identity behind a handshake, or ``None`` to refuse it.
+
+    An open deployment ignores the ticket entirely, which is what keeps a
+    socket working exactly as it did before this existed. A protected one
+    requires a valid ticket and treats unknown, expired and already-spent the
+    same way -- distinguishing them would tell an attacker which guesses were
+    once real.
+    """
+    if not authenticator.protects:
+        return RequestIdentity.anonymous()
+
+    if not ticket:
+        logger.info("realtime handshake refused reason=missing_ticket")
+        return None
+
+    subject = await tickets.redeem(ticket)
+    if subject is None:
+        # No fingerprint: a ticket is single-use, so correlating attempts by
+        # value would only ever match one real request.
+        logger.warning("realtime handshake refused reason=invalid_ticket")
+        return None
+
+    logger.info("realtime authenticated subject=%s", subject)
+    return RequestIdentity.api_key(subject)
 
 
 @router.websocket("/ws")
@@ -104,9 +169,28 @@ async def realtime(
     registry: ConnectionRegistry = Depends(get_registry),
     provider: StreamingLLMProvider = Depends(get_streaming_provider),
     recorder: TurnRecorder = Depends(get_turn_recorder),
+    authenticator: Authenticator = Depends(get_authenticator),
+    authorizer: Authorizer = Depends(get_authorizer),
+    tickets: TicketStore = Depends(get_ticket_store),
+    ticket: str | None = Query(
+        default=None,
+        description=(
+            "A ticket from POST /ws/ticket. Required when the deployment "
+            "authenticates; ignored when it does not."
+        ),
+    ),
 ) -> None:
     """Serve one realtime connection for its lifetime."""
     await websocket.accept()
+
+    identity = await authenticate_socket(ticket, authenticator, tickets)
+    if identity is None:
+        # Closed after accepting, because a refusal before the handshake gives
+        # a browser no code to act on.
+        await websocket.close(
+            code=CLOSE_UNAUTHENTICATED, reason="a valid ticket is required"
+        )
+        return
     try:
         connection = registry.add(websocket)
     except RealtimeCapacityError:
@@ -117,6 +201,9 @@ async def realtime(
         await connection.send(Ready(connection_id=connection.id))
         # One streamer per connection: that is the scope the single-flight rule
         # is defined over.
+        # The recorder is scoped to whoever the ticket named, so a realtime
+        # turn is written under the same ownership rules as an HTTP one.
+        recorder.scope_to(authorizer.scope_for(identity))
         await _serve(
             connection, websocket, settings, AnswerStreamer(provider, recorder)
         )

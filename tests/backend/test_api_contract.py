@@ -27,6 +27,9 @@ EXPECTED_PATHS = {
     "/api/v1/conversations",
     "/api/v1/conversations/{conversation_id}",
     "/api/v1/conversations/{conversation_id}/messages",
+    # A browser cannot set a header on a WebSocket handshake, so a client
+    # trades its key here for a short-lived ticket.
+    "/api/v1/ws/ticket",
 }
 
 

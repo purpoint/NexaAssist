@@ -9,6 +9,7 @@ import uuid
 from collections.abc import Iterator
 
 import pytest
+from fastapi import WebSocketDisconnect
 from fastapi.testclient import TestClient
 
 from app.agent.loop import AgentDecision
@@ -115,6 +116,13 @@ def open_conversation(client: TestClient, headers: dict, email: str) -> str:
     )
     assert response.status_code == 201
     return response.json()["id"]
+
+
+def realtime_ticket(client: TestClient, headers: dict) -> str:
+    """Trade an authenticated request for a handshake ticket."""
+    response = client.post("/api/v1/ws/ticket", headers=headers)
+    assert response.status_code == 200
+    return response.json()["ticket"]
 
 
 def raise_ticket(client: TestClient, headers: dict, email: str) -> str:
@@ -270,10 +278,52 @@ def test_a_refusal_body_carries_no_internals(client: TestClient) -> None:
 # The socket fails closed under scoping
 
 
-def test_the_socket_refuses_to_record_when_scoping_is_on(client: TestClient) -> None:
-    """A socket carries no identity, so it must not write unscoped."""
+def test_a_handshake_without_a_ticket_is_refused(client: TestClient) -> None:
+    """The socket used to refuse to *record*; now it refuses to connect."""
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect("/api/v1/ws") as socket:
+            socket.receive_json()
+    assert caught.value.code == 1008
+
+
+def test_a_handshake_with_a_bad_ticket_is_refused(client: TestClient) -> None:
+    with pytest.raises(WebSocketDisconnect) as caught:
+        with client.websocket_connect("/api/v1/ws?ticket=not-a-real-ticket") as socket:
+            socket.receive_json()
+    assert caught.value.code == 1008
+
+
+def test_a_ticketed_socket_records_under_its_own_ownership(
+    client: TestClient,
+) -> None:
+    """The limitation tickets were built to remove."""
     conversation = open_conversation(client, WEB, "a@example.com")
-    with client.websocket_connect("/api/v1/ws") as socket:
+    ticket = realtime_ticket(client, WEB)
+
+    with client.websocket_connect(f"/api/v1/ws?ticket={ticket}") as socket:
+        socket.receive_json()
+        socket.send_text(
+            '{"type": "ask", "question": "why?", "conversation_id": "%s"}'
+            % conversation
+        )
+        while True:
+            frame = socket.receive_json()
+            if frame["type"] in ("complete", "error"):
+                break
+
+    assert frame["type"] == "complete"
+    history = client.get(f"{CONVERSATIONS}/{conversation}/messages", headers=WEB).json()
+    assert [m["role"] for m in history["messages"]] == ["customer", "assistant"]
+
+
+def test_a_ticket_cannot_reach_another_subjects_conversation(
+    client: TestClient,
+) -> None:
+    """Ownership over the socket is the same 404 it is over HTTP."""
+    conversation = open_conversation(client, WEB, "a@example.com")
+    ticket = realtime_ticket(client, WORKER)
+
+    with client.websocket_connect(f"/api/v1/ws?ticket={ticket}") as socket:
         socket.receive_json()
         socket.send_text(
             '{"type": "ask", "question": "why?", "conversation_id": "%s"}'
@@ -282,14 +332,38 @@ def test_the_socket_refuses_to_record_when_scoping_is_on(client: TestClient) -> 
         frame = socket.receive_json()
 
     assert frame["type"] == "error"
-    assert frame["code"] == "realtime_conversations_unavailable"
-
+    assert frame["code"] == "conversation_not_found"
     history = client.get(f"{CONVERSATIONS}/{conversation}/messages", headers=WEB).json()
     assert history["messages"] == []
 
 
+def test_a_ticket_is_spent_by_the_first_handshake(client: TestClient) -> None:
+    """Single use is half of what makes a ticket in a URL acceptable."""
+    ticket = realtime_ticket(client, WEB)
+
+    with client.websocket_connect(f"/api/v1/ws?ticket={ticket}") as socket:
+        socket.receive_json()
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect(f"/api/v1/ws?ticket={ticket}") as socket:
+            socket.receive_json()
+
+
+def test_minting_a_ticket_needs_the_key(client: TestClient) -> None:
+    assert client.post("/api/v1/ws/ticket").status_code == 401
+    assert client.post("/api/v1/ws/ticket", headers=WEB).status_code == 200
+
+
+def test_the_ticket_response_carries_no_credential(client: TestClient) -> None:
+    body = client.post("/api/v1/ws/ticket", headers=WEB).json()
+    assert set(body) == {"ticket", "expires_in_seconds"}
+    assert WEB_KEY not in body["ticket"]
+    assert body["expires_in_seconds"] > 0
+
+
 def test_the_socket_still_answers_without_a_conversation(client: TestClient) -> None:
-    with client.websocket_connect("/api/v1/ws") as socket:
+    ticket = realtime_ticket(client, WEB)
+    with client.websocket_connect(f"/api/v1/ws?ticket={ticket}") as socket:
         socket.receive_json()
         socket.send_text('{"type": "ask", "question": "why?"}')
         kinds = []
