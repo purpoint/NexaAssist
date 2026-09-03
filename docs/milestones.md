@@ -227,10 +227,24 @@ Delivered in three checkpoints.
 
 No HTTP surface and no dependencies; OpenAPI unchanged.
 
-## M17 — Security Hardening
+## M17 — Production Assistant API ✅
 
-- [ ] Authentication
-- [ ] Authorization and tenant isolation
+Delivered in three checkpoints.
+
+- [x] `POST /api/v1/assistant/messages`: the first HTTP surface over the
+      answering pipeline, with the classify → route → escalate order stated
+      once in `AssistantService`
+- [x] Conversation integration: `POST /api/v1/conversations`,
+      `GET /api/v1/conversations/{id}/messages`, and an optional
+      `conversation_id` on a message
+- [x] Hardening: a pinned path list, concurrency, error mapping, readiness
+      behaviour, and regression against M1–M16
+
+_Retitled during this milestone. The roadmap previously scheduled Security
+Hardening here, but M6–M16 had shipped no endpoint over the pipeline they
+built, so an application surface had to come first. **Authentication,
+authorization, and tenant isolation are deferred, not dropped** — nothing in
+M17 adds auth, and the API is unauthenticated until that milestone lands.
 
 ## M18 — Production Frontend
 

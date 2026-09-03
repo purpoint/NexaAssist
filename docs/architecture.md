@@ -781,6 +781,41 @@ request span
   unreported, because a real completion always consumes some input — and
   `StaticLLMProvider` returns exactly that.
 
+### Assistant API (M17)
+
+```
+POST /api/v1/assistant/messages
+   └─ AssistantService
+        1. IntentService        classify
+        2. IntentRouter         route — policy runs inside, on what would be sent
+        3. HandoffService       escalate on the reply policy approved
+```
+
+- **The order is stated once.** Escalation runs last on purpose: escalating on
+  the handler's draft would ask a person to review a reply the customer never
+  received, and skipping it would send a reply nobody checked.
+- **The response schema is not the service's value type.** `AssistantReply` may
+  grow fields the API has no reason to publish; letting one object be both is
+  how an internal change becomes a breaking change.
+- **Errors are not caught at the route.** Every failure the pipeline produces
+  is already an `AppError`, and M1's handler renders it — catching again would
+  risk flattening a precise status into a 500.
+- **Tracing is wrapped once, at the composition root.** Classification,
+  grounded answering, and every agent step are counted against one trace
+  without any of those layers knowing. The response carries that trace id: it
+  identifies the request, not its content, so it is safe to quote in a ticket.
+- **The question is recorded before the pipeline runs.** A provider outage then
+  still leaves evidence it was asked; losing the question because answering
+  failed is the worse outcome.
+- **Continuity is recorded, not fed back.** The pipeline still answers one
+  message at a time. Conditioning on history would change what M8's handlers
+  receive, which is a shipped contract — a separate change with its own
+  consequences.
+- **Customer identity has its own service.** M4 keeps get-or-create private
+  inside `TicketService`; rather than reach in or widen a shipped class,
+  `CustomerService` repeats the shape and a test pins that both paths resolve
+  the same address to the same customer, so they cannot drift.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the
