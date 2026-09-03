@@ -8,6 +8,7 @@ the embedders, job queues, and trace recorders.
 from collections.abc import Callable
 from functools import lru_cache
 
+from app.auth.authorization import Authorizer, OpenAuthorizer, SubjectScopedAuthorizer
 from app.auth.base import Authenticator
 from app.auth.providers import (
     AnonymousAuthenticator,
@@ -46,3 +47,26 @@ def get_authenticator() -> Authenticator:
     the configured set must not appear to change between requests.
     """
     return _default_authenticator()
+
+
+_AUTHORIZERS: dict[str, Callable[[], Authorizer]] = {
+    OpenAuthorizer.name: OpenAuthorizer,
+    SubjectScopedAuthorizer.name: SubjectScopedAuthorizer,
+}
+
+AUTHORIZER_NAMES: tuple[str, ...] = tuple(sorted(_AUTHORIZERS))
+
+
+def build_authorizer(settings: Settings) -> Authorizer:
+    """Construct the authorizer named by settings."""
+    return _AUTHORIZERS[settings.authz_provider]()
+
+
+@lru_cache(maxsize=1)
+def _default_authorizer() -> Authorizer:
+    return build_authorizer(get_settings())
+
+
+def get_authorizer() -> Authorizer:
+    """The process-wide authorizer."""
+    return _default_authorizer()

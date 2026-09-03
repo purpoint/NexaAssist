@@ -51,6 +51,14 @@ class Ticket(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         index=True,
     )
 
+    # The subject that created this row, when the deployment scopes by
+    # subject. Nullable: rows predating ownership, and every row created by a
+    # deployment that does not scope, have no owner. Indexed because every
+    # scoped read filters on it.
+    owner_subject: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, index=True
+    )
+
     subject: Mapped[str] = mapped_column(String(200), nullable=False)
     body: Mapped[str] = mapped_column(Text, nullable=False)
 

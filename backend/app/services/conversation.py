@@ -12,6 +12,7 @@ from collections.abc import Sequence
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.authorization import OwnerScope
 from app.core.logging import get_logger
 from app.models import Conversation, ConversationMessage, MessageRole
 from app.services.errors import ConversationNotFoundError
@@ -38,8 +39,10 @@ class ConversationService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def start(self, customer_id: uuid.UUID) -> Conversation:
-        conversation = Conversation(customer_id=customer_id)
+    async def start(
+        self, customer_id: uuid.UUID, *, owner_subject: str | None = None
+    ) -> Conversation:
+        conversation = Conversation(customer_id=customer_id, owner_subject=owner_subject)
         self._session.add(conversation)
         await self._session.flush()
         await self._session.commit()
@@ -51,16 +54,39 @@ class ConversationService:
         )
         return conversation
 
-    async def get(self, conversation_id: uuid.UUID) -> Conversation:
+    async def get(
+        self, conversation_id: uuid.UUID, *, scope: OwnerScope | None = None
+    ) -> Conversation:
+        """Return one conversation, honouring ownership when scoped.
+
+        A conversation owned by somebody else raises the same error as one
+        that does not exist. Returning a distinct "forbidden" would confirm
+        the conversation is real, which is the fact being protected; the
+        difference is recorded in the log instead.
+        """
         conversation = await self._session.get(Conversation, conversation_id)
         if conversation is None:
+            raise ConversationNotFoundError(
+                details={"conversation_id": str(conversation_id)}
+            )
+        if scope is not None and not scope.permits(conversation.owner_subject):
+            logger.warning(
+                "conversation access refused conversation_id=%s subject=%s",
+                conversation_id,
+                scope.subject,
+            )
             raise ConversationNotFoundError(
                 details={"conversation_id": str(conversation_id)}
             )
         return conversation
 
     async def append(
-        self, conversation_id: uuid.UUID, *, role: MessageRole, content: str
+        self,
+        conversation_id: uuid.UUID,
+        *,
+        role: MessageRole,
+        content: str,
+        scope: OwnerScope | None = None,
     ) -> ConversationMessage:
         """Add a turn at the next position.
 
@@ -69,7 +95,9 @@ class ConversationService:
         ``(conversation_id, position)`` rejects a duplicate if two appends
         race, rather than silently interleaving them.
         """
-        await self.get(conversation_id)  # 404 rather than a foreign-key error
+        # 404 rather than a foreign-key error, and the same 404 when the
+        # conversation belongs to another subject.
+        await self.get(conversation_id, scope=scope)
 
         message = ConversationMessage(
             conversation_id=conversation_id,

@@ -19,6 +19,8 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.identity import require_identity
+from app.auth.authorization import Authorizer
+from app.auth.factory import get_authorizer
 from app.auth.identity import RequestIdentity
 from app.db.session import get_db_session
 from app.schemas.common import ErrorResponse
@@ -62,10 +64,13 @@ async def start_conversation(
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
     customers: Annotated[CustomerService, Depends(get_customer_service)],
     identity: Annotated[RequestIdentity, Depends(require_identity)],
+    authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> ConversationResponse:
     """Open a conversation, creating the customer on first contact."""
     customer = await customers.get_or_create(payload.customer_email)
-    conversation = await conversations.start(customer.id)
+    conversation = await conversations.start(
+        customer.id, owner_subject=authorizer.owner_for(identity)
+    )
     return ConversationResponse.model_validate(conversation)
 
 
@@ -75,13 +80,20 @@ async def start_conversation(
     summary="Fetch a conversation",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
-        404: {"model": ErrorResponse, "description": "No such conversation."},
+        404: {
+            "model": ErrorResponse,
+            "description": (
+                "No such conversation — also returned for a conversation owned "
+                "by another subject, which must not be distinguishable."
+            ),
+        },
     },
 )
 async def read_conversation(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
     identity: Annotated[RequestIdentity, Depends(require_identity)],
+    authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> ConversationResponse:
     """Return a conversation's identity.
 
@@ -90,7 +102,7 @@ async def read_conversation(
     message list that looks like a conversation with nothing in it.
     """
     return ConversationResponse.model_validate(
-        await conversations.get(conversation_id)
+        await conversations.get(conversation_id, scope=authorizer.scope_for(identity))
     )
 
 
@@ -100,13 +112,20 @@ async def read_conversation(
     summary="Read a conversation's turns",
     responses={
         401: {"model": ErrorResponse, "description": "Authentication is required."},
-        404: {"model": ErrorResponse, "description": "No such conversation."},
+        404: {
+            "model": ErrorResponse,
+            "description": (
+                "No such conversation — also returned for a conversation owned "
+                "by another subject, which must not be distinguishable."
+            ),
+        },
     },
 )
 async def read_history(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
     identity: Annotated[RequestIdentity, Depends(require_identity)],
+    authorizer: Annotated[Authorizer, Depends(get_authorizer)],
     limit: Annotated[int | None, Query(ge=1, le=MAX_HISTORY)] = None,
 ) -> ConversationHistoryResponse:
     """Return the turns in reading order.
@@ -116,7 +135,7 @@ async def read_history(
     """
     # Resolves to a 404 before any history is read, rather than returning an
     # empty list for a conversation that never existed.
-    await conversations.get(conversation_id)
+    await conversations.get(conversation_id, scope=authorizer.scope_for(identity))
     messages = await conversations.history(conversation_id, limit=limit)
     return ConversationHistoryResponse(
         conversation_id=conversation_id,

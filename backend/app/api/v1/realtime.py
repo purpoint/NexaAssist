@@ -23,6 +23,8 @@ from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect
 from pydantic import ValidationError
 from starlette.websockets import WebSocketState
 
+from app.auth.authorization import Authorizer
+from app.auth.factory import get_authorizer
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.llm.streaming import StreamingLLMProvider, build_streaming_provider
@@ -82,13 +84,17 @@ def get_streaming_provider() -> StreamingLLMProvider:
     return build_streaming_provider(get_settings())
 
 
-def get_turn_recorder() -> TurnRecorder:
+def get_turn_recorder(
+    authorizer: Authorizer = Depends(get_authorizer),
+) -> TurnRecorder:
     """How realtime turns reach the database.
 
     A dependency so a test can substitute one, and so the socket never holds a
-    session: the recorder opens a short-lived one per turn.
+    session: the recorder opens a short-lived one per turn. The authorizer is
+    passed in so a deployment that scopes by subject refuses the write rather
+    than performing it unscoped -- a socket carries no identity.
     """
-    return SessionTurnRecorder()
+    return SessionTurnRecorder(authorizer)
 
 
 @router.websocket("/ws")

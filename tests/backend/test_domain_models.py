@@ -81,9 +81,13 @@ def test_ticket_columns() -> None:
         "subject",
         "body",
         "status",
+        # M19 added ownership. Nullable on purpose: a row created by a
+        # deployment that does not scope by subject has no owner.
+        "owner_subject",
         "created_at",
         "updated_at",
     }
+    assert TICKETS.columns["owner_subject"].nullable is True
     assert isinstance(TICKETS.columns["subject"].type, String)
     assert TICKETS.columns["subject"].type.length == 200
     assert isinstance(TICKETS.columns["body"].type, Text)
@@ -149,6 +153,8 @@ def test_indexes_match_the_queries_they_serve() -> None:
         "ix_tickets_customer_id",
         "ix_tickets_created_at",
         "ix_tickets_status_created_at",
+        # M19: every scoped listing filters on the owner.
+        "ix_tickets_owner_subject",
     }
 
 

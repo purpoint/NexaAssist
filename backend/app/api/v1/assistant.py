@@ -20,6 +20,8 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.identity import require_identity
+from app.auth.authorization import Authorizer
+from app.auth.factory import get_authorizer
 from app.auth.identity import RequestIdentity
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
@@ -83,6 +85,7 @@ async def answer_message(
     service: Annotated[AssistantService, Depends(get_assistant_service)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
     identity: Annotated[RequestIdentity, Depends(require_identity)],
+    authorizer: Annotated[Authorizer, Depends(get_authorizer)],
 ) -> AssistantMessageResponse:
     """Classify, answer, apply policy, and escalate if a person is needed.
 
@@ -93,7 +96,9 @@ async def answer_message(
     """
     with tracer.span("assistant.message", SpanKind.REQUEST) as span:
         reply = await service.respond(
-            payload.message, conversation_id=payload.conversation_id
+            payload.message,
+            conversation_id=payload.conversation_id,
+            scope=authorizer.scope_for(identity),
         )
         span.set_attributes(
             {

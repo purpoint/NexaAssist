@@ -4,7 +4,16 @@ import uuid
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Index, Integer, Text, UniqueConstraint
+from sqlalchemy import (
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -30,6 +39,14 @@ class Conversation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # their row.
     customer_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("customers.id", ondelete="RESTRICT"), nullable=False
+    )
+
+    # The subject that created this row, when the deployment scopes by
+    # subject. Nullable: rows predating ownership, and every row created by a
+    # deployment that does not scope, have no owner. Indexed because every
+    # scoped read filters on it.
+    owner_subject: Mapped[str | None] = mapped_column(
+        String(200), nullable=True, index=True
     )
 
     messages: Mapped[list["ConversationMessage"]] = relationship(

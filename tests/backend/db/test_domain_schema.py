@@ -81,6 +81,8 @@ async def test_both_tables_exist_with_expected_columns(engine: AsyncEngine) -> N
                     "subject",
                     "body",
                     "status",
+                    # M19 ownership; nullable, so existing rows keep working.
+                    "owner_subject",
                     "created_at",
                     "updated_at",
                 },

@@ -247,7 +247,9 @@ def test_a_fingerprint_is_short_and_not_the_key() -> None:
 class StubAssistant:
     """Answers without a database, so the happy path is genuinely reachable."""
 
-    async def respond(self, message: str, *, conversation_id=None) -> AssistantReply:
+    async def respond(
+        self, message: str, *, conversation_id=None, scope=None
+    ) -> AssistantReply:
         return AssistantReply(
             reply="a reply",
             intent=IntentCategory.OTHER,

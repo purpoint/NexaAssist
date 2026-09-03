@@ -23,6 +23,7 @@ import uuid
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.auth.authorization import OwnerScope
 from app.core.logging import get_logger
 from app.escalation.criteria import EscalationReason
 from app.escalation.handoff import HandoffService
@@ -79,7 +80,11 @@ class AssistantService:
         self._conversations = conversations
 
     async def respond(
-        self, message: str, *, conversation_id: uuid.UUID | None = None
+        self,
+        message: str,
+        *,
+        conversation_id: uuid.UUID | None = None,
+        scope: OwnerScope | None = None,
     ) -> AssistantReply:
         """Classify, route, and decide whether a person is needed.
 
@@ -89,7 +94,7 @@ class AssistantService:
         losing the question because answering failed is the worse outcome.
         """
         if conversation_id is not None:
-            await self._record(conversation_id, MessageRole.CUSTOMER, message)
+            await self._record(conversation_id, MessageRole.CUSTOMER, message, scope)
 
         analysis = await self._intent.analyze(message)
         routed = await self._router.route(message, analysis)
@@ -109,7 +114,9 @@ class AssistantService:
         )
 
         if conversation_id is not None:
-            await self._record(conversation_id, MessageRole.ASSISTANT, handoff.reply)
+            await self._record(
+                conversation_id, MessageRole.ASSISTANT, handoff.reply, scope
+            )
 
         return AssistantReply(
             reply=handoff.reply,
@@ -131,7 +138,11 @@ class AssistantService:
         )
 
     async def _record(
-        self, conversation_id: uuid.UUID, role: MessageRole, content: str
+        self,
+        conversation_id: uuid.UUID,
+        role: MessageRole,
+        content: str,
+        scope: OwnerScope | None = None,
     ) -> None:
         """Append one turn.
 
@@ -139,4 +150,6 @@ class AssistantService:
         mistake and deserves its 404, not a silently unrecorded exchange.
         """
         assert self._conversations is not None
-        await self._conversations.append(conversation_id, role=role, content=content)
+        await self._conversations.append(
+            conversation_id, role=role, content=content, scope=scope
+        )

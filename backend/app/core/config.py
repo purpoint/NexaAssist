@@ -129,6 +129,12 @@ class Settings(BaseSettings):
     # reason ``cors_origins`` needs it.
     auth_api_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Whether resources are restricted to the subject that created them.
+    # "open" enforces nothing and is the default, so a single-tenant
+    # deployment behaves exactly as before. "subject" requires authentication,
+    # since there is no subject to scope by without it.
+    authz_provider: Literal["open", "subject"] = Field(default="open")
+
     # Where completed spans go. "logging" emits one line per span through the
     # existing logging configuration, so the M2 redaction filter covers trace
     # lines too. "memory" is deterministic and is what tests assert on; "none"
@@ -189,6 +195,20 @@ class Settings(BaseSettings):
             raise ValueError(
                 "DATABASE_URL must use the postgresql+asyncpg driver, "
                 f"got {scheme!r}."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _scoped_authz_needs_authentication(self) -> Self:
+        """Scoping by subject is meaningless when every request is anonymous.
+
+        Allowing it would silently restrict every resource to the single
+        subject "anonymous", which looks like it is working and protects
+        nothing.
+        """
+        if self.authz_provider == "subject" and self.auth_provider == "none":
+            raise ValueError(
+                "AUTHZ_PROVIDER=subject requires AUTH_PROVIDER to be set."
             )
         return self
 

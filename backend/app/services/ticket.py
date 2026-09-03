@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.authorization import OwnerScope
 from app.core.logging import get_logger
 from app.models import Customer, Ticket, TicketStatus
 from app.services.errors import TicketNotFoundError
@@ -38,11 +39,23 @@ class TicketService:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def create(self, *, customer_email: str, subject: str, body: str) -> Ticket:
+    async def create(
+        self,
+        *,
+        customer_email: str,
+        subject: str,
+        body: str,
+        owner_subject: str | None = None,
+    ) -> Ticket:
         """Record a ticket, creating the customer on first contact."""
         customer = await self._get_or_create_customer(normalise_email(customer_email))
 
-        ticket = Ticket(customer_id=customer.id, subject=subject, body=body)
+        ticket = Ticket(
+            customer_id=customer.id,
+            subject=subject,
+            body=body,
+            owner_subject=owner_subject,
+        )
         self._session.add(ticket)
         await self._session.flush()
         await self._session.commit()
@@ -57,10 +70,23 @@ class TicketService:
         )
         return ticket
 
-    async def get(self, ticket_id: uuid.UUID) -> Ticket:
-        """Return one ticket, or raise :class:`TicketNotFoundError`."""
+    async def get(
+        self, ticket_id: uuid.UUID, *, scope: OwnerScope | None = None
+    ) -> Ticket:
+        """Return one ticket, or raise :class:`TicketNotFoundError`.
+
+        Another subject's ticket raises the same error as a missing one, so
+        the response never confirms that it exists.
+        """
         ticket = await self._session.get(Ticket, ticket_id)
         if ticket is None:
+            raise TicketNotFoundError(details={"ticket_id": str(ticket_id)})
+        if scope is not None and not scope.permits(ticket.owner_subject):
+            logger.warning(
+                "ticket access refused ticket_id=%s subject=%s",
+                ticket_id,
+                scope.subject,
+            )
             raise TicketNotFoundError(details={"ticket_id": str(ticket_id)})
         return ticket
 
@@ -70,11 +96,19 @@ class TicketService:
         status: TicketStatus | None = None,
         limit: int = DEFAULT_PAGE_SIZE,
         offset: int = 0,
+        scope: OwnerScope | None = None,
     ) -> Sequence[Ticket]:
-        """Return a page of tickets, newest first."""
+        """Return a page of tickets, newest first.
+
+        A scoped listing filters in the database rather than after fetching:
+        filtering afterwards would make a page of ten rows return fewer than
+        ten, and would read another subject's rows to do it.
+        """
         statement = select(Ticket)
         if status is not None:
             statement = statement.where(Ticket.status == status)
+        if scope is not None:
+            statement = statement.where(Ticket.owner_subject == scope.subject)
 
         # id is the tiebreaker: timestamps collide at this resolution, and an
         # unstable sort makes pagination skip or repeat rows between pages.
