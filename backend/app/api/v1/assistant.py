@@ -19,6 +19,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.identity import require_identity
+from app.auth.identity import RequestIdentity
 from app.core.config import Settings, get_settings
 from app.db.session import get_db_session
 from app.escalation.factory import build_handoff
@@ -72,6 +74,7 @@ def get_assistant_service(
     response_model=AssistantMessageResponse,
     summary="Answer a customer message",
     responses={
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
         503: {"model": ErrorResponse, "description": "A dependency is unavailable."},
     },
 )
@@ -79,6 +82,7 @@ async def answer_message(
     payload: AssistantMessageRequest,
     service: Annotated[AssistantService, Depends(get_assistant_service)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
 ) -> AssistantMessageResponse:
     """Classify, answer, apply policy, and escalate if a person is needed.
 
@@ -93,6 +97,10 @@ async def answer_message(
         )
         span.set_attributes(
             {
+                # The subject is a non-secret label, so it is safe on a span
+                # and is what ties a trace to a caller.
+                "subject": identity.subject,
+                "authenticated": identity.authenticated,
                 "intent": reply.intent.value,
                 "handler": reply.handler,
                 "handled": reply.handled,

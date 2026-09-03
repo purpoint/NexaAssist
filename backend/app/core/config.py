@@ -118,6 +118,17 @@ class Settings(BaseSettings):
     # ``NoDecode`` for the same reason ``cors_origins`` needs it.
     llm_pricing: Annotated[list[str], NoDecode] = Field(default_factory=list)
 
+    # Which authentication mechanism to use. "none" accepts every request as
+    # anonymous and is the default, so a deployment that has not opted in keeps
+    # behaving exactly as it did. "api_key" checks a shared key and needs
+    # AUTH_API_KEYS.
+    auth_provider: Literal["none", "api_key"] = Field(default="none")
+    # Entries are "subject:secret". The subject is a stable, non-secret label
+    # that authorization compares against; the secret is a credential and never
+    # reaches a log, an error body, or a trace. ``NoDecode`` for the same
+    # reason ``cors_origins`` needs it.
+    auth_api_keys: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
     # Where completed spans go. "logging" emits one line per span through the
     # existing logging configuration, so the M2 redaction filter covers trace
     # lines too. "memory" is deterministic and is what tests assert on; "none"
@@ -139,7 +150,7 @@ class Settings(BaseSettings):
         """
         return f"{self.api_prefix.rstrip('/')}/v1"
 
-    @field_validator("cors_origins", "llm_pricing", mode="before")
+    @field_validator("cors_origins", "llm_pricing", "auth_api_keys", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         """Accept a comma-separated string, as written in ``.env.example``."""
@@ -179,6 +190,17 @@ class Settings(BaseSettings):
                 "DATABASE_URL must use the postgresql+asyncpg driver, "
                 f"got {scheme!r}."
             )
+        return self
+
+    @model_validator(mode="after")
+    def _api_key_auth_needs_keys(self) -> Self:
+        """Fail at startup rather than on the first protected request.
+
+        Selecting key authentication with no keys would reject every caller,
+        which looks like an outage rather than a misconfiguration.
+        """
+        if self.auth_provider == "api_key" and not self.auth_api_keys:
+            raise ValueError("AUTH_PROVIDER=api_key requires AUTH_API_KEYS to be set.")
         return self
 
     @model_validator(mode="after")

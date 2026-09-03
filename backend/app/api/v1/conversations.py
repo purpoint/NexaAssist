@@ -18,6 +18,8 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.identity import require_identity
+from app.auth.identity import RequestIdentity
 from app.db.session import get_db_session
 from app.schemas.common import ErrorResponse
 from app.schemas.conversation import (
@@ -51,11 +53,15 @@ def get_customer_service(
     response_model=ConversationResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Open a conversation",
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication is required."}
+    },
 )
 async def start_conversation(
     payload: ConversationStartRequest,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
     customers: Annotated[CustomerService, Depends(get_customer_service)],
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
 ) -> ConversationResponse:
     """Open a conversation, creating the customer on first contact."""
     customer = await customers.get_or_create(payload.customer_email)
@@ -67,11 +73,15 @@ async def start_conversation(
     "/{conversation_id}",
     response_model=ConversationResponse,
     summary="Fetch a conversation",
-    responses={404: {"model": ErrorResponse, "description": "No such conversation."}},
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        404: {"model": ErrorResponse, "description": "No such conversation."},
+    },
 )
 async def read_conversation(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
 ) -> ConversationResponse:
     """Return a conversation's identity.
 
@@ -88,11 +98,15 @@ async def read_conversation(
     "/{conversation_id}/messages",
     response_model=ConversationHistoryResponse,
     summary="Read a conversation's turns",
-    responses={404: {"model": ErrorResponse, "description": "No such conversation."}},
+    responses={
+        401: {"model": ErrorResponse, "description": "Authentication is required."},
+        404: {"model": ErrorResponse, "description": "No such conversation."},
+    },
 )
 async def read_history(
     conversation_id: uuid.UUID,
     conversations: Annotated[ConversationService, Depends(get_conversation_service)],
+    identity: Annotated[RequestIdentity, Depends(require_identity)],
     limit: Annotated[int | None, Query(ge=1, le=MAX_HISTORY)] = None,
 ) -> ConversationHistoryResponse:
     """Return the turns in reading order.
