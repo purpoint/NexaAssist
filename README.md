@@ -20,8 +20,36 @@ Routes are versioned: version 1 is served under `/api/v1`. The pre-v1
 | --- | --- |
 | `docs/` | Design documents: overview, architecture, tech stack, prompt design, milestones. |
 | `backend/` | Python + FastAPI service. |
-| `frontend/` | React + TypeScript client (structure only, no UI yet). |
+| `frontend/` | React + TypeScript client. |
 | `tests/` | Test suite, split by target (`backend/`, `frontend/`). |
+
+## Running in a container
+
+The backend ships a two-stage image. It is built from the `backend/` directory,
+so the repository root — and the git-ignored `.env` beside it — is not in the
+build context at all.
+
+```bash
+docker build -f backend/Dockerfile -t nexaassist-backend backend
+```
+
+Configuration is passed at run time, never baked in:
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env nexaassist-backend
+```
+
+The image runs as a non-root user, installs from `backend/requirements.lock`
+so two builds install the same versions, and **does not migrate the database on
+startup**. Applying a migration stays an explicit action against a database you
+chose:
+
+```bash
+cd backend && alembic upgrade head
+```
+
+A local orchestration for PostgreSQL, Redis and the frontend arrives with the
+rest of M22.
 
 ## Prerequisites
 
