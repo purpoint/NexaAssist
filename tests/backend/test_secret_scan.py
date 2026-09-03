@@ -18,8 +18,10 @@ REPO = Path(__file__).resolve().parents[2]
 SCANNER = REPO / "scripts" / "scan-secrets.sh"
 
 # Assembled rather than written out, so the file that tests the scanner does
-# not itself trip it.
+# not itself trip it -- which it did, once the file was committed and the scan
+# started seeing it. Nothing here may appear as a literal.
 FAKE_KEY = "gsk_" + "A" * 24
+FAKE_PRIVATE_KEY = "-----BEGIN " + "OPENSSH PRIVATE KEY-----"
 MARKER = "secret-scan: synthetic"
 
 
@@ -122,5 +124,5 @@ def test_an_untracked_environment_file_is_not_a_finding(repository: Path) -> Non
 
 
 def test_a_private_key_is_a_finding(repository: Path) -> None:
-    commit(repository, "id_rsa", "-----BEGIN OPENSSH PRIVATE KEY-----\nx\n")
+    commit(repository, "id_rsa", f"{FAKE_PRIVATE_KEY}\nx\n")
     assert scan(repository).returncode == 1

@@ -1,6 +1,7 @@
 """The workflow library run against real tickets and a real knowledge base."""
 
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator
 
@@ -205,6 +206,12 @@ async def test_the_run_summary_leaks_no_customer_content(
     assert "4242" in str(outputs)  # the caller still receives the data
 
 
+UUID_PATTERN = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE
+)
+"""Random identifiers, which carry none of the customer's data."""
+
+
 @pytest.mark.anyio
 async def test_logs_record_the_run_shape_not_its_content(
     runner, session: AsyncSession, caplog: pytest.LogCaptureFixture
@@ -219,4 +226,10 @@ async def test_logs_record_the_run_shape_not_its_content(
         )
 
     assert "workflow=ticket_context" in caplog.text
-    assert "4242" not in caplog.text
+    # Identifiers removed before searching. A run id is a random UUID, and a
+    # UUID is hexadecimal -- so it contains every decimal digit and will
+    # eventually contain any four of them in a row. CI caught one that did.
+    # Matching there is a coincidence, not a leak: what this asserts is that
+    # the ticket's own content never reaches a log line.
+    logged = UUID_PATTERN.sub("<id>", caplog.text)
+    assert "4242" not in logged
