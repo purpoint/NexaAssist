@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     # memory-exhaustion vector: the server buffers it before it can judge it.
     realtime_max_message_bytes: int = Field(default=65_536, ge=1_024, le=1_048_576)
 
+    # Where completed spans go. "logging" emits one line per span through the
+    # existing logging configuration, so the M2 redaction filter covers trace
+    # lines too. "memory" is deterministic and is what tests assert on; "none"
+    # turns tracing off without branching at any call site.
+    trace_recorder: Literal["logging", "memory", "none"] = Field(default="logging")
+
     # Below this self-reported confidence a classification is treated as
     # ambiguous and sent to the fallback instead of a specialised handler.
     # Self-reported, not calibrated -- see docs/prompt.md -- so this is a
