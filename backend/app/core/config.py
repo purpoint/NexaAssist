@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     # memory-exhaustion vector: the server buffers it before it can judge it.
     realtime_max_message_bytes: int = Field(default=65_536, ge=1_024, le=1_048_576)
 
+    # Per-model prices, as "model:input_per_million:output_per_million"
+    # entries. Empty by default: shipping invented rates would produce numbers
+    # that look authoritative and are wrong the moment a vendor changes them.
+    # ``NoDecode`` for the same reason ``cors_origins`` needs it.
+    llm_pricing: Annotated[list[str], NoDecode] = Field(default_factory=list)
+
     # Where completed spans go. "logging" emits one line per span through the
     # existing logging configuration, so the M2 redaction filter covers trace
     # lines too. "memory" is deterministic and is what tests assert on; "none"
@@ -133,7 +139,7 @@ class Settings(BaseSettings):
         """
         return f"{self.api_prefix.rstrip('/')}/v1"
 
-    @field_validator("cors_origins", mode="before")
+    @field_validator("cors_origins", "llm_pricing", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:
         """Accept a comma-separated string, as written in ``.env.example``."""
