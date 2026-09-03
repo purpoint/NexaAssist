@@ -6,7 +6,7 @@ router, so the version prefix is applied in exactly one place.
 
 from fastapi import APIRouter
 
-from app.api.v1 import documents, health, intent, readiness, realtime, tickets
+from app.api.v1 import assistant, documents, health, intent, readiness, realtime, tickets
 
 router = APIRouter()
 router.include_router(health.router)
@@ -14,4 +14,5 @@ router.include_router(readiness.router)
 router.include_router(intent.router)
 router.include_router(tickets.router)
 router.include_router(documents.router)
+router.include_router(assistant.router)
 router.include_router(realtime.router)
