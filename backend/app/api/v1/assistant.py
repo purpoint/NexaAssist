@@ -14,6 +14,7 @@ handlers, tools, and agent behind this route hold that session rather than a
 global one.
 """
 
+import time
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -29,7 +30,8 @@ from app.escalation.factory import build_handoff
 from app.llm.base import LLMProvider
 from app.llm.factory import get_llm_provider
 from app.observability.cost import PricingTable
-from app.observability.factory import get_pricing_table, get_tracer
+from app.observability.factory import get_metrics, get_pricing_table, get_tracer
+from app.observability.metrics import Metrics
 from app.observability.integration import traced_provider
 from app.observability.spans import SpanKind
 from app.observability.tracer import Tracer
@@ -52,6 +54,7 @@ def get_assistant_service(
     settings: Annotated[Settings, Depends(get_settings)],
     tracer: Annotated[Tracer, Depends(get_tracer)],
     pricing: Annotated[PricingTable, Depends(get_pricing_table)],
+    metrics: Annotated[Metrics, Depends(get_metrics)],
 ) -> AssistantService:
     """Assemble the pipeline for one request.
 
@@ -60,7 +63,7 @@ def get_assistant_service(
     retrieval-grounded answering, and each agent step -- is counted once,
     against one trace, without any of those layers knowing.
     """
-    observed = traced_provider(provider, tracer, pricing=pricing)
+    observed = traced_provider(provider, tracer, pricing=pricing, metrics=metrics)
     return AssistantService(
         IntentService(observed),
         build_router(
@@ -87,6 +90,7 @@ async def answer_message(
     tracer: Annotated[Tracer, Depends(get_tracer)],
     identity: Annotated[RequestIdentity, Depends(enforce_rate_limit)],
     authorizer: Annotated[Authorizer, Depends(get_authorizer)],
+    metrics: Annotated[Metrics, Depends(get_metrics)],
 ) -> AssistantMessageResponse:
     """Classify, answer, apply policy, and escalate if a person is needed.
 
@@ -95,6 +99,7 @@ async def answer_message(
     database -- and M1's handler renders them through ``ErrorResponse``.
     Catching them again would only risk turning a precise status into a 500.
     """
+    started = time.perf_counter()
     with tracer.span("assistant.message", SpanKind.REQUEST) as span:
         reply = await service.respond(
             payload.message,
@@ -112,6 +117,21 @@ async def answer_message(
                 "handled": reply.handled,
                 "escalated": reply.escalated,
             }
+        )
+        # Every label is a bounded category or a flag. The message, the reply
+        # and the citations are never labels.
+        metrics.increment(
+            "assistant_requests_total",
+            {
+                "intent": reply.intent.value,
+                "handler": reply.handler,
+                "handled": reply.handled,
+                "escalated": reply.escalated,
+                "policy_modified": reply.policy_modified,
+            },
+        )
+        metrics.observe(
+            "assistant_duration_ms", (time.perf_counter() - started) * 1000.0
         )
         return AssistantMessageResponse(
             **reply.model_dump(exclude={"route_reason"}),

@@ -14,12 +14,14 @@ Wrapping is opt-in at the root. An unwrapped provider or registry behaves
 exactly as it did before, which is what keeps this additive.
 """
 
+import time
 from typing import Any, TypeVar
 
 from pydantic import BaseModel
 
 from app.llm.base import LLMConfig, LLMPrompt, LLMProvider, StructuredCompletion
 from app.observability.cost import CostEstimate, PricingTable, UsageLedger, estimate_cost
+from app.observability.metrics import Metrics, NullMetrics
 from app.observability.spans import SpanKind
 from app.observability.tracer import Tracer
 from app.routing.handlers import HandlerRequest, HandlerResponse, IntentHandler
@@ -45,11 +47,13 @@ class TracedLLMProvider:
         *,
         pricing: PricingTable | None = None,
         ledger: UsageLedger | None = None,
+        metrics: Metrics | None = None,
     ) -> None:
         self._provider = provider
         self._tracer = tracer
         self._pricing = pricing if pricing is not None else PricingTable()
         self._ledger = ledger
+        self._metrics = metrics if metrics is not None else NullMetrics()
 
     @property
     def name(self) -> str:
@@ -105,20 +109,34 @@ class TracedLLMProvider:
         )
         if self._ledger is not None:
             self._ledger.add(estimate)
+
+        # Model and provider are bounded dimensions; the prompt and the answer
+        # are not recorded at all.
+        labels = {"provider": completion.provider, "model": completion.model}
+        self._metrics.increment("llm_calls_total", labels)
+        self._metrics.increment(
+            "llm_input_tokens_total", labels, by=estimate.input_tokens
+        )
+        self._metrics.increment(
+            "llm_output_tokens_total", labels, by=estimate.output_tokens
+        )
         return estimate
 
 
 class TracedTool:
-    """A ``Tool`` that records a span around its run.
+    """A ``Tool`` that records a span and a metric around its run.
 
     Name, description, and parameter model are the wrapped tool's, so the
     registry, the JSON Schema a model sees, and every error message are
     unchanged.
     """
 
-    def __init__(self, tool: Tool, tracer: Tracer) -> None:
+    def __init__(
+        self, tool: Tool, tracer: Tracer, metrics: Metrics | None = None
+    ) -> None:
         self._tool = tool
         self._tracer = tracer
+        self._metrics = metrics if metrics is not None else NullMetrics()
 
     @property
     def name(self) -> str:
@@ -133,19 +151,35 @@ class TracedTool:
         return self._tool.parameters
 
     async def run(self, params: BaseModel) -> Any:
+        started = time.perf_counter()
+        labels = {"tool": self._tool.name}
         with self._tracer.span("tool.run", SpanKind.TOOL, tool=self._tool.name):
-            # Deliberately no result attribute: a tool returns domain objects,
-            # and a ticket body is customer content. The executor already
-            # records the outcome, and the span records that it ran.
-            return await self._tool.run(params)
+            try:
+                # Deliberately no result attribute: a tool returns domain
+                # objects, and a ticket body is customer content. The executor
+                # already records the outcome, and the span records that it ran.
+                output = await self._tool.run(params)
+            except Exception:
+                self._metrics.increment(
+                    "tool_runs_total", {**labels, "outcome": "error"}
+                )
+                raise
+            self._metrics.increment("tool_runs_total", {**labels, "outcome": "ok"})
+            self._metrics.observe(
+                "tool_duration_ms", (time.perf_counter() - started) * 1000.0, labels
+            )
+            return output
 
 
 class TracedIntentHandler:
     """An ``IntentHandler`` that records a span around its work."""
 
-    def __init__(self, handler: IntentHandler, tracer: Tracer) -> None:
+    def __init__(
+        self, handler: IntentHandler, tracer: Tracer, metrics: Metrics | None = None
+    ) -> None:
         self._handler = handler
         self._tracer = tracer
+        self._metrics = metrics if metrics is not None else NullMetrics()
 
     @property
     def name(self) -> str:
@@ -158,10 +192,16 @@ class TracedIntentHandler:
             response = await self._handler.handle(request)
             # Flags and counts only -- never the reply.
             span.set_attribute("handled", response.handled)
+            self._metrics.increment(
+                "handler_runs_total",
+                {"handler": self._handler.name, "handled": response.handled},
+            )
             return response
 
 
-def traced_registry(registry: ToolRegistry, tracer: Tracer) -> ToolRegistry:
+def traced_registry(
+    registry: ToolRegistry, tracer: Tracer, metrics: Metrics | None = None
+) -> ToolRegistry:
     """Return a registry whose tools each record a span.
 
     A new registry rather than a mutation: the original is often still held by
@@ -170,7 +210,7 @@ def traced_registry(registry: ToolRegistry, tracer: Tracer) -> ToolRegistry:
     """
     traced = ToolRegistry()
     for tool in registry:
-        traced.register(TracedTool(tool, tracer))
+        traced.register(TracedTool(tool, tracer, metrics))
     return traced
 
 
@@ -180,9 +220,12 @@ def traced_provider(
     *,
     pricing: PricingTable | None = None,
     ledger: UsageLedger | None = None,
+    metrics: Metrics | None = None,
 ) -> LLMProvider:
     """Wrap a provider for tracing and accounting."""
-    return TracedLLMProvider(provider, tracer, pricing=pricing, ledger=ledger)
+    return TracedLLMProvider(
+        provider, tracer, pricing=pricing, ledger=ledger, metrics=metrics
+    )
 
 
 def result_attributes(result: ToolResult) -> dict[str, Any]:

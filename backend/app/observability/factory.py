@@ -10,6 +10,7 @@ from functools import lru_cache
 
 from app.core.config import Settings, get_settings
 from app.observability.cost import PricingTable
+from app.observability.metrics import InMemoryMetrics, Metrics, NullMetrics
 from app.observability.tracer import (
     InMemoryRecorder,
     LoggingRecorder,
@@ -67,3 +68,30 @@ def _default_pricing() -> PricingTable:
 def get_pricing_table() -> PricingTable:
     """The process-wide price list."""
     return _default_pricing()
+
+
+_METRICS: dict[str, Callable[[], Metrics]] = {
+    NullMetrics.name: NullMetrics,
+    InMemoryMetrics.name: InMemoryMetrics,
+}
+
+METRICS_NAMES: tuple[str, ...] = tuple(sorted(_METRICS))
+
+
+def build_metrics(settings: Settings) -> Metrics:
+    """Construct the recorder named by settings."""
+    return _METRICS[settings.metrics_recorder]()
+
+
+@lru_cache(maxsize=1)
+def _default_metrics() -> Metrics:
+    return build_metrics(get_settings())
+
+
+def get_metrics() -> Metrics:
+    """The process-wide metrics recorder.
+
+    Cached because the in-memory recorder *is* its own storage: a fresh one per
+    request would report every counter as one.
+    """
+    return _default_metrics()

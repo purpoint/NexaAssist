@@ -145,6 +145,12 @@ class Settings(BaseSettings):
     # since there is no subject to scope by without it.
     authz_provider: Literal["open", "subject"] = Field(default="open")
 
+    # Where operational counters and durations go. "memory" keeps bounded
+    # totals in this process and is the default, since metrics nobody records
+    # are metrics nobody has. "none" turns them off without branching at any
+    # call site.
+    metrics_recorder: Literal["none", "memory"] = Field(default="memory")
+
     # Where completed spans go. "logging" emits one line per span through the
     # existing logging configuration, so the M2 redaction filter covers trace
     # lines too. "memory" is deterministic and is what tests assert on; "none"

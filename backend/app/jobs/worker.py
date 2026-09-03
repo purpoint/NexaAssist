@@ -28,6 +28,7 @@ from app.core.logging import get_logger
 from app.jobs.base import Job, JobQueue, JobStatus
 from app.jobs.errors import JobNotFoundError
 from app.jobs.handlers import JobError, JobHandler, JobHandlerRegistry
+from app.observability.metrics import Metrics, NullMetrics
 
 logger = get_logger(__name__)
 
@@ -71,10 +72,13 @@ class JobWorker:
         registry: JobHandlerRegistry,
         *,
         timeout_seconds: float = DEFAULT_JOB_TIMEOUT_SECONDS,
+        metrics: Metrics | None = None,
     ) -> None:
         self._queue = queue
         self._registry = registry
         self._timeout = timeout_seconds
+        # Optional and defaulted, so every existing caller is unchanged.
+        self._metrics = metrics if metrics is not None else NullMetrics()
 
     async def run_once(self) -> JobRun | None:
         """Run the next job, or return ``None`` when there is nothing to do.
@@ -169,6 +173,7 @@ class JobWorker:
             JobOutcome.SUCCEEDED.value,
             duration,
         )
+        self._record(job.name, JobOutcome.SUCCEEDED, duration)
         return JobRun(
             job_id=job.id,
             name=job.name,
@@ -195,6 +200,7 @@ class JobWorker:
             recorded.attempts,
             duration,
         )
+        self._record(job.name, outcome, duration)
         return JobRun(
             job_id=job.id,
             name=job.name,
@@ -203,6 +209,13 @@ class JobWorker:
             error=error,
             duration_ms=duration,
         )
+
+
+    def _record(self, name: str, outcome: JobOutcome, duration_ms: float) -> None:
+        """Job name and outcome are bounded; the payload is never a label."""
+        labels = {"job": name, "outcome": outcome.value}
+        self._metrics.increment("job_runs_total", labels)
+        self._metrics.observe("job_duration_ms", duration_ms, {"job": name})
 
 
 def _describe_validation(exc: ValidationError) -> str:
