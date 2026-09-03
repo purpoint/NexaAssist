@@ -1,0 +1,140 @@
+# The NexaAssist stack, for running the whole system on one machine.
+#
+#     NEXA_DB_PASSWORD=... docker compose up --build
+#     NEXA_DB_PASSWORD=... docker compose --profile migrate run --rm migrate
+#
+# Three deliberate choices are worth reading before changing anything here.
+#
+# Nothing migrates on its own. `migrate` sits behind a profile, so `up` never
+# starts it and no service waits on it. Applying a migration is an operator's
+# decision about a database they chose, and a stack that decides it for them
+# will eventually decide it against something they cared about.
+#
+# Postgres and Redis publish no ports. They exist for the backend, which
+# reaches them over the compose network by name; a published 5432 would sit
+# next to whatever Postgres the developer already runs, and the failure mode
+# of getting that wrong is writing to the wrong database. `docker compose exec`
+# is the way in.
+#
+# No credential is written here. The database password is a required variable
+# with no default -- compose refuses to start rather than bring up a stack
+# secured by a password that is also in the git history.
+
+name: nexaassist
+
+services:
+  db:
+    # pgvector rather than stock postgres: the first migration runs
+    # CREATE EXTENSION vector, and stock postgres cannot.
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_USER: ${NEXA_DB_USER:-nexa}
+      POSTGRES_PASSWORD: ${NEXA_DB_PASSWORD:?set NEXA_DB_PASSWORD (any local value) before starting the stack}
+      POSTGRES_DB: ${NEXA_DB_NAME:-nexaassist}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # -U matters: without it pg_isready asks about the root user and reports
+      # a healthy server the application cannot actually log in to.
+      test: ["CMD-SHELL", "pg_isready -U ${NEXA_DB_USER:-nexa} -d ${NEXA_DB_NAME:-nexaassist}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  backend:
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    ports:
+      - "127.0.0.1:18000:8000"
+    environment:
+      # Built from parts so no connection string with a password is written
+      # down. asyncpg, because the application's engine is async.
+      DATABASE_URL: postgresql+asyncpg://${NEXA_DB_USER:-nexa}:${NEXA_DB_PASSWORD}@db:5432/${NEXA_DB_NAME:-nexaassist}
+      # This stack's own Redis, addressed by service name. Never a host
+      # address: a URL that resolves outside this network would put NexaAssist
+      # keys in whatever Redis the developer happens to be running.
+      REDIS_URL: redis://redis:6379/0
+      REDIS_NAMESPACE: nexaassist:jobs
+      JOB_QUEUE: redis
+      RATE_LIMIT_PROVIDER: redis
+      REALTIME_TICKET_STORE: redis
+      # The published frontend, which is the origin a browser will actually
+      # send. Overrides whatever .env says, because .env describes a developer
+      # running Vite on the host and this is not that.
+      CORS_ORIGINS: http://localhost:15173,http://127.0.0.1:15173
+      APP_ENV: compose
+    env_file:
+      # Optional on purpose: the stack should come up on a machine that has
+      # never had one. What it carries is the provider key -- injected at
+      # runtime, never copied into the image.
+      - path: .env
+        required: false
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # urllib rather than curl: the runtime image ships the application and
+      # its dependencies, and adding a HTTP client for the sake of a
+      # healthcheck would be adding attack surface to answer a question Python
+      # can already answer.
+      test:
+        ["CMD", "python", "-c",
+         "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+
+  frontend:
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+      args:
+        # The browser's view of the backend, not the network's: this URL is
+        # resolved on the developer's machine, where `backend` is not a name.
+        VITE_API_BASE_URL: http://127.0.0.1:18000/api/v1
+    ports:
+      - "127.0.0.1:15173:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    # The same image as the backend, running Alembic instead of the server.
+    # Behind a profile, so `docker compose up` cannot start it: schema changes
+    # are applied when somebody asks for them.
+    build:
+      context: backend
+      dockerfile: Dockerfile
+    profiles: ["migrate"]
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${NEXA_DB_USER:-nexa}:${NEXA_DB_PASSWORD}@db:5432/${NEXA_DB_NAME:-nexaassist}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  # Named, and named after this project: an anonymous volume is discarded on
+  # the next `up` and takes the local database with it.
+  pgdata:
+  redisdata:

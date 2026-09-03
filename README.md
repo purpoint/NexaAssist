@@ -48,8 +48,44 @@ chose:
 cd backend && alembic upgrade head
 ```
 
-A local orchestration for PostgreSQL, Redis and the frontend arrives with the
-rest of M22.
+### The whole stack
+
+`compose.yaml` brings up the backend, the client, PostgreSQL (with pgvector)
+and Redis together. The database password is a required variable with no
+default — the stack refuses to start rather than run on a password that is also
+in this repository:
+
+```bash
+NEXA_DB_PASSWORD=choose-anything-local docker compose up --build
+```
+
+The client is then on <http://127.0.0.1:15173> and the API on
+<http://127.0.0.1:18000>. PostgreSQL and Redis publish no ports: they exist for
+the backend, which reaches them over the compose network. That is deliberate —
+a published 5432 would sit next to whatever PostgreSQL you already run, and
+getting that wrong means writing to the wrong database. To get a shell on one:
+
+```bash
+docker compose exec db psql -U nexa -d nexaassist
+```
+
+Migrations never run on their own. The `migrate` service sits behind a profile,
+so `up` cannot start it and nothing waits on it:
+
+```bash
+NEXA_DB_PASSWORD=... docker compose --profile migrate run --rm migrate
+```
+
+If a `.env` exists it is passed to the backend at run time — so the stack uses
+whichever `LLM_PROVIDER` it names, and `groq` means real, billable calls. Set
+`LLM_PROVIDER=static` for a stack that answers deterministically and calls
+nothing.
+
+Two notes on secrets. `docker compose config` resolves `.env` and prints its
+values, including the provider key — do not paste its output anywhere. And the
+client's API URL is inlined by Vite at build time, so it is a build argument
+(`VITE_API_BASE_URL`), which means it is visible in the image's history: it is a
+URL, and nothing secret belongs there.
 
 ## Prerequisites
 

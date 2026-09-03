@@ -6,3 +6,6 @@ httpx>=0.27,<1.0
 # Lint. Invoked as `python -m pyflakes backend/app backend/alembic tests`, so
 # the module entry point is what matters, not a console script.
 pyflakes>=3.2,<4.0
+# Reads compose.yaml in the stack guards. Present already as a transitive
+# dependency, declared here because a test that imports it depends on it.
+pyyaml>=6.0,<7.0
