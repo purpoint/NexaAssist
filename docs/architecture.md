@@ -742,6 +742,45 @@ EvalSuite (cases) ─▶ EvaluationRunner ─▶ EvalTarget ─▶ output
 - **No tolerance on the shipped suites.** They run deterministic targets, and a
   threshold below 100% is a licence for a real break to hide under it.
 
+### Observability (M16)
+
+```
+request span
+  └─ agent span
+       ├─ llm span      provider, model, tokens, cost
+       └─ tool span     tool name, outcome
+```
+
+- **Correlation comes from a `ContextVar`, not a parameter.** It is per-task
+  under asyncio, so concurrent requests never adopt each other's spans, and no
+  call signature has to thread a trace id through.
+- **Integration is composition, not modification.** Every seam worth observing
+  — the model provider, a tool, an intent handler — is already a `Protocol`, so
+  a wrapper satisfying the same protocol slots in at the composition root. No
+  M2, M6, M7, M8, or M9 source file changed, and wrapping stays opt-in: an
+  unwrapped provider or registry behaves exactly as before.
+- **Attribute values cannot be prose.** Numbers and booleans always; a string
+  only when it is short *and* has no whitespace. A length cap alone leaks —
+  "how do I get my money back?" is well under any sensible limit — while every
+  attribute this system records is a single token. Anything with a space is a
+  sentence, and a sentence in a trace is content.
+- **Tracing never breaks the work it observes.** A recorder that raises is
+  logged and ignored; an unsafe value is replaced rather than raised on. A span
+  always closes, so a failure is a span with an error status rather than a span
+  that never appears — and error *categories* only, never messages.
+- **Tokens and cost are separate concerns.** The provider reports usage; only a
+  configured price list can say what it cost.
+- **No prices ship.** An invented per-million rate produces a number that looks
+  authoritative and is wrong the moment a vendor changes it, and wrong money is
+  worse than absent money. Unpriced calls are fully accounted in tokens and say
+  so.
+- **Money is `Decimal`.** Costs are summed and compared between runs; float
+  sums depend on order. Totals add the already-rounded per-call figures, so a
+  total agrees with the numbers it was built from.
+- **A blind spot is not a zero.** A call reporting 0/0 tokens reads as
+  unreported, because a real completion always consumes some input — and
+  `StaticLLMProvider` returns exactly that.
+
 ### Migrations
 
 Alembic owns the schema, and only Alembic. `alembic/env.py` resolves the

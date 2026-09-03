@@ -212,10 +212,20 @@ canned response per schema, so such a suite would pass whatever the prompt said.
 The model-facing guard is the digest pin; judging the model needs a real
 provider and is an operator action.
 
-## M16 — Observability + Cost Tracking
+## M16 — Observability + Cost Tracking ✅
 
-- [ ] Structured tracing
-- [ ] Token and cost accounting
+Delivered in three checkpoints.
+
+- [x] Structured tracing: spans correlated through a `ContextVar`, three
+      recorders behind one protocol, and attribute values that cannot carry
+      prose
+- [x] Token and cost accounting: provider/model-aware usage, deterministic
+      `Decimal` cost from a configured price list, and no invented prices
+- [x] Integration across the agent, tools, workflows, routing, and LLM calls —
+      by wrapping protocols at the composition root, so no earlier milestone's
+      source changed
+
+No HTTP surface and no dependencies; OpenAPI unchanged.
 
 ## M17 — Security Hardening
 
