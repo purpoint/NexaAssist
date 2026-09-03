@@ -87,6 +87,21 @@ client's API URL is inlined by Vite at build time, so it is a build argument
 (`VITE_API_BASE_URL`), which means it is visible in the image's history: it is a
 URL, and nothing secret belongs there.
 
+### What keeps the images honest
+
+Both build contexts carry a `.dockerignore` that excludes `.env` and every
+variant of it. The Dockerfiles copy by name, so nothing depends on that today —
+it is the second defence for the day someone writes `COPY . .`, and two things
+must then go wrong before a key reaches an image.
+
+`tests/backend/test_container_build.py` and `test_compose_stack.py` read the
+Dockerfiles and `compose.yaml` as text, so they run anywhere. The smoke tests in
+`tests/backend/docker/` build the images and look inside them — no `.env` in the
+filesystem, no credential in the layer history or the served bundle, no compiler
+or test runner in the runtime image, and a container that starts and answers
+with nothing configured at all. They skip themselves when no Docker daemon is
+reachable, so the suite still passes without one.
+
 ## Prerequisites
 
 - Python 3.11+

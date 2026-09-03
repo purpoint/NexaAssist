@@ -1,0 +1,35 @@
+# What Docker must not send to the daemon.
+#
+# node_modules is the important line. It is ~90MB of host-built packages, some
+# with native binaries compiled for macOS, and the builder runs `npm ci` to
+# install the same lock file for Linux -- so sending it is slow and wrong at
+# the same time.
+#
+# The secret patterns are here for the same reason as in the backend context:
+# the Dockerfile copies by name today, and this is the second defence for the
+# day somebody changes that.
+
+# Secrets. Vite inlines VITE_ variables into the bundle, so a .env reaching
+# this context is not only a file in an image -- it is a value published to
+# every browser that loads the app.
+.env
+.env.*
+*.env
+!.env.example
+
+# Installed and built output. Both are produced inside the builder.
+node_modules/
+dist/
+
+# Test and tooling state.
+coverage/
+.vite/
+*.tsbuildinfo
+
+# Version control and editor state.
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store

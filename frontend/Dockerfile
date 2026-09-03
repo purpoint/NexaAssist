@@ -51,4 +51,12 @@ COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf
 
 COPY --from=builder --chown=nginx:nginx /build/dist /usr/share/nginx/html
 
+LABEL org.opencontainers.image.title="NexaAssist client" \
+      org.opencontainers.image.description="NexaAssist web client." \
+      org.opencontainers.image.source="https://github.com/purpoint/NexaAssist" \
+      org.opencontainers.image.licenses="MIT"
+
 EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+    CMD ["wget", "--quiet", "--spider", "http://127.0.0.1:8080/"]

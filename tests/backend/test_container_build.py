@@ -8,6 +8,7 @@ image actually builds is a separate check, run where a daemon exists.
 """
 
 import re
+from fnmatch import fnmatch
 from pathlib import Path
 
 import pytest
@@ -25,12 +26,22 @@ def dockerfile() -> str:
 
 @pytest.fixture(scope="module")
 def instructions(dockerfile: str) -> list[str]:
-    """Dockerfile lines with comments and blanks removed."""
-    return [
-        line.strip()
-        for line in dockerfile.splitlines()
-        if line.strip() and not line.strip().startswith("#")
-    ]
+    """One entry per Dockerfile instruction, comments and blanks removed.
+
+    Continuations are joined, so a multi-line ENV is one instruction and --
+    the case that matters -- a HEALTHCHECK's own CMD is part of the
+    HEALTHCHECK rather than a second command the container would run.
+    """
+    joined: list[str] = []
+    for line in dockerfile.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if joined and joined[-1].endswith("\\"):
+            joined[-1] = f"{joined[-1][:-1].strip()} {stripped}"
+        else:
+            joined.append(stripped)
+    return [line.removesuffix("\\").strip() for line in joined]
 
 
 def directives(instructions: list[str], keyword: str) -> list[str]:
@@ -178,3 +189,92 @@ def test_the_lock_contains_no_development_dependencies() -> None:
     pinned = LOCKFILE.read_text().lower()
     for dev_only in ("pytest", "pyflakes", "httpx2"):
         assert f"\n{dev_only}==" not in f"\n{pinned}", dev_only
+
+
+# --------------------------------------------------------------------------
+# The build context
+
+FRONTEND = Path(__file__).resolve().parents[2] / "frontend"
+
+CONTEXTS = {"backend": BACKEND, "frontend": FRONTEND}
+
+
+def ignore_patterns(context: Path) -> list[str]:
+    return [
+        line.strip()
+        for line in (context / ".dockerignore").read_text().splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+
+
+def excluded(patterns: list[str], path: str) -> bool:
+    """Does any pattern exclude ``path``, accounting for negations?
+
+    Docker applies patterns in order and a later `!pattern` re-includes, so
+    the last one to match decides. Approximate, but exact enough for the
+    filenames these tests care about.
+    """
+    verdict = False
+    for pattern in patterns:
+        negated = pattern.startswith("!")
+        candidate = pattern.removeprefix("!").rstrip("/")
+        if fnmatch(path, candidate) or fnmatch(path, f"{candidate}/*"):
+            verdict = not negated
+    return verdict
+
+
+@pytest.mark.parametrize("name", sorted(CONTEXTS))
+def test_each_build_context_has_an_ignore_file(name: str) -> None:
+    """The Dockerfiles copy by name, so this is the second defence.
+
+    It is the one that matters on the day somebody writes `COPY . .`: two
+    independent things must then go wrong before a key reaches an image.
+    """
+    assert (CONTEXTS[name] / ".dockerignore").is_file()
+
+
+@pytest.mark.parametrize("name", sorted(CONTEXTS))
+@pytest.mark.parametrize("secret", (".env", ".env.local", ".env.production"))
+def test_no_environment_file_can_enter_the_context(name: str, secret: str) -> None:
+    """Every variant, not just `.env`.
+
+    A pattern that catches `.env` and misses `.env.local` is worse than none,
+    because it reads like coverage.
+    """
+    assert excluded(ignore_patterns(CONTEXTS[name]), secret), secret
+
+
+def test_the_backend_context_excludes_development_only_inputs() -> None:
+    patterns = ignore_patterns(BACKEND)
+    for path in ("tests", "requirements-dev.txt", "__pycache__", ".venv"):
+        assert excluded(patterns, path), path
+
+
+def test_the_client_context_excludes_host_built_output() -> None:
+    """node_modules holds packages compiled for the developer's platform; the
+    builder installs the same lock file for the image's."""
+    patterns = ignore_patterns(FRONTEND)
+    for path in ("node_modules", "dist"):
+        assert excluded(patterns, path), path
+
+
+def test_the_lock_file_still_reaches_the_backend_context() -> None:
+    """The ignore file must not exclude what the build needs."""
+    patterns = ignore_patterns(BACKEND)
+    for path in ("requirements.lock", "app", "alembic", "alembic.ini"):
+        assert not excluded(patterns, path), path
+
+
+# --------------------------------------------------------------------------
+# The image describes itself
+
+
+def test_the_image_health_checks_itself(dockerfile: str) -> None:
+    """In the image, not only in compose: anything that runs it gets the same
+    answer to "is it up?"."""
+    assert "HEALTHCHECK" in dockerfile
+    assert "/api/v1/health" in dockerfile
+
+
+def test_the_image_says_where_it_came_from(dockerfile: str) -> None:
+    assert "org.opencontainers.image.source" in dockerfile

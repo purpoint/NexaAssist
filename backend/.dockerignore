@@ -1,0 +1,51 @@
+# What Docker must not send to the daemon.
+#
+# The Dockerfile already copies by name, so nothing here is load-bearing for
+# today's build. It is load-bearing for tomorrow's: the day somebody adds a
+# `COPY . .`, this file is what decides whether a key goes with it. Two
+# defences, because the one that fails is always the one there was only one of.
+#
+# It also keeps the context small, which is why a build does not spend its
+# first seconds uploading __pycache__.
+
+# Secrets. First, and with every variant spelled out -- .env.local is as
+# sensitive as .env, and a pattern that misses it is worse than no pattern
+# because it looks like coverage.
+.env
+.env.*
+*.env
+!.env.example
+*.pem
+*.key
+id_rsa*
+secrets/
+
+# Python build and cache artefacts. A .pyc compiled by a different interpreter
+# on a different platform is at best dead weight and at worst confusing.
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# A host virtualenv holds platform-specific binaries built for macOS; the
+# image builds its own inside Linux.
+.venv/
+venv/
+
+# Development-only inputs. The image installs from the lock file, and a test
+# runner in a production image is surface for no benefit.
+requirements-dev.txt
+tests/
+pyproject.toml
+
+# Version control and editor state.
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+.DS_Store

@@ -33,6 +33,13 @@ RUN pip install --no-cache-dir -r requirements.lock
 
 FROM python:3.12-slim-bookworm AS runtime
 
+# Standard annotations, so an image found later in a registry can be traced
+# back to what produced it without anybody having to guess.
+LABEL org.opencontainers.image.title="NexaAssist backend" \
+      org.opencontainers.image.description="Agentic customer-support API." \
+      org.opencontainers.image.source="https://github.com/purpoint/NexaAssist" \
+      org.opencontainers.image.licenses="MIT"
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONFAULTHANDLER=1 \
@@ -64,4 +71,12 @@ EXPOSE 8000
 # development convenience and a production liability. Host and port stay
 # fixed because the container's own port is not the deployment's concern --
 # a publish mapping decides that.
+# Declared on the image, not only in compose: whatever runs this -- compose,
+# a scheduler, a bare `docker run` -- gets the same answer to "is it up?".
+# Python rather than curl, because the runtime carries the application and its
+# dependencies and nothing else; installing a HTTP client to ask one question
+# would be adding attack surface to save a line.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health', timeout=3).status == 200 else 1)"]
+
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
