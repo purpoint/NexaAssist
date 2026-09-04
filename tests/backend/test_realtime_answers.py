@@ -8,6 +8,7 @@ not any particular model output.
 import asyncio
 import json
 import logging
+import uuid
 from collections.abc import AsyncIterator
 
 import pytest
@@ -18,11 +19,18 @@ from app.llm.base import LLMConfig, LLMPrompt
 from app.llm.errors import LLMTimeoutError, LLMUnavailableError
 from app.llm.streaming import StaticStreamingProvider, StreamingLLMProvider
 from app.main import create_app
+from app.schemas.intent import IntentCategory
+from app.routing.router import RouteReason
+from app.schemas.document import Citation
+from app.services.assistant import AssistantReply
+from app.core.exceptions import AppError
 from app.realtime.answers import (
     BUSY_CODE,
     BUSY_MESSAGE,
+    PIPELINE_FAILED_CODE,
     STREAM_FAILED_MESSAGE,
     AnswerStreamer,
+    chunk,
 )
 from app.realtime.connection import Connection
 from app.realtime.envelope import (
@@ -287,3 +295,235 @@ def test_a_malformed_ask_is_a_protocol_error() -> None:
 def test_the_websocket_route_remains_absent_from_openapi() -> None:
     with client_with(StaticStreamingProvider()) as client:
         assert "/api/v1/ws" not in client.get("/openapi.json").json()["paths"]
+
+
+# --------------------------------------------------------------------------
+# The grounded path
+#
+# The socket used to answer with unsourced prose while the HTTP endpoint ran
+# the full pipeline, so the client -- which prefers the socket whenever one is
+# open -- never showed a citation. These pin the behaviour that replaced it.
+
+
+ANSWER = "Standard shipping takes 3 to 5 business days within the country."
+
+CITATION = Citation(
+    document_id=uuid.uuid4(),
+    document_title="Shipping and delivery",
+    ordinal=0,
+    excerpt="Standard shipping takes 3 to 5 business days within the country.",
+    similarity=0.83,
+)
+
+
+def reply(**overrides: object) -> AssistantReply:
+    """A pipeline result, grounded and unescalated unless said otherwise."""
+    fields: dict = {
+        "reply": ANSWER,
+        "intent": IntentCategory.PRODUCT_QUESTION,
+        "confidence": 0.98,
+        "handler": "knowledge_base",
+        "route_reason": RouteReason.MATCHED,
+        "fallback": False,
+        "handled": True,
+        "citations": [CITATION],
+    }
+    fields.update(overrides)
+    return AssistantReply(**fields)
+
+
+class RecordingRecorder:
+    """A turn recorder that only remembers it was asked."""
+
+    def __init__(self) -> None:
+        self.recorded: list[tuple[uuid.UUID, object, str]] = []
+
+    def scope_to(self, scope: object) -> None:
+        pass
+
+    async def record(self, conversation_id, role, content) -> None:
+        self.recorded.append((conversation_id, role, content))
+
+
+class FakeAnswerer:
+    """A pipeline that answers without a database or a model."""
+
+    def __init__(self, result: AssistantReply | Exception, available: bool = True) -> None:
+        self._result = result
+        self._available = available
+        self.calls: list[tuple[str, uuid.UUID | None]] = []
+        self.scope = "unset"
+
+    @property
+    def available(self) -> bool:
+        return self._available
+
+    def scope_to(self, scope: object) -> None:
+        self.scope = scope
+
+    async def answer(
+        self, question: str, *, conversation_id: uuid.UUID | None = None
+    ) -> AssistantReply:
+        self.calls.append((question, conversation_id))
+        if isinstance(self._result, Exception):
+            raise self._result
+        return self._result
+
+
+async def ask(streamer: AnswerStreamer, question: str = "How long is shipping?", **kw):
+    socket = FakeSocket()
+    await streamer.answer(Connection(id="c1", socket=socket), question, **kw)
+    return socket.sent
+
+
+@pytest.mark.anyio
+async def test_the_socket_answers_from_the_pipeline() -> None:
+    answerer = FakeAnswerer(reply())
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, answerer))
+
+    assert answerer.calls, "the pipeline was never asked"
+    complete = sent[-1]
+    assert complete["type"] == ServerMessageType.COMPLETE
+    assert complete["text"] == ANSWER
+
+
+@pytest.mark.anyio
+async def test_the_deltas_reproduce_the_approved_answer() -> None:
+    """The frame contract: joining the deltas gives the text exactly.
+
+    It matters more here than before. These deltas are a rendering of an
+    answer policy has already approved, so a client that concatenates them
+    must arrive at the approved wording and not an approximation of it.
+    """
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(reply())))
+    deltas = [f["text"] for f in sent if f["type"] == ServerMessageType.DELTA]
+    assert deltas
+    assert "".join(deltas) == ANSWER
+
+
+@pytest.mark.anyio
+async def test_the_citations_reach_the_client() -> None:
+    """The point of the change. Without these the client cannot show a source
+    even when the answer has one."""
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(reply())))
+    complete = sent[-1]
+    assert complete["grounded"] is True
+    assert [c["document_title"] for c in complete["citations"]] == [
+        "Shipping and delivery"
+    ]
+
+
+@pytest.mark.anyio
+async def test_an_escalated_answer_says_so() -> None:
+    """A billing question is answered by a person. A client that cannot tell
+    that apart from a normal answer will present a handoff as a resolution."""
+    escalated = reply(handled=False, escalated=True, citations=[], handler="agent")
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(escalated)))
+
+    complete = sent[-1]
+    assert complete["escalated"] is True
+    assert complete["grounded"] is True
+    assert complete["citations"] == []
+
+
+@pytest.mark.anyio
+async def test_the_pipeline_is_given_the_conversation() -> None:
+    """It records both turns itself, which is why the streamer must not."""
+    answerer = FakeAnswerer(reply())
+    recorder = RecordingRecorder()
+    conversation = uuid.uuid4()
+
+    await ask(
+        AnswerStreamer(StaticStreamingProvider(), recorder, answerer),
+        conversation_id=conversation,
+    )
+
+    assert answerer.calls == [("How long is shipping?", conversation)]
+    assert recorder.recorded == [], "the exchange would have been written twice"
+
+
+@pytest.mark.anyio
+async def test_a_pipeline_failure_is_reported_as_its_own_code() -> None:
+    """An unknown conversation is the client's mistake, and its code says so
+    rather than becoming a generic failure."""
+    refusal = AppError("No such conversation.")
+    refusal.code = "conversation_not_found"
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(refusal)))
+
+    assert sent[-1]["type"] == ServerMessageType.ERROR
+    assert sent[-1]["code"] == "conversation_not_found"
+
+
+@pytest.mark.anyio
+async def test_an_unexpected_failure_does_not_leak_its_message() -> None:
+    """A pipeline error's text can name a model, a table, or a DSN."""
+    boom = RuntimeError("connect to postgres://user:hunter2@db:5432 failed")
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(boom)))
+
+    frame = sent[-1]
+    assert frame["type"] == ServerMessageType.ERROR
+    assert frame["code"] == PIPELINE_FAILED_CODE
+    assert "hunter2" not in json.dumps(frame)
+    assert "postgres" not in json.dumps(frame)
+
+
+@pytest.mark.anyio
+async def test_without_a_database_it_falls_back_and_admits_it() -> None:
+    """Unsourced prose is still an answer. It is not a sourced one, and the
+    frame is what tells the client which it got."""
+    answerer = FakeAnswerer(reply(), available=False)
+    sent = await ask(AnswerStreamer(StaticStreamingProvider(), None, answerer))
+
+    assert answerer.calls == []
+    complete = sent[-1]
+    assert complete["type"] == ServerMessageType.COMPLETE
+    assert complete["grounded"] is False
+    assert complete["citations"] == []
+
+
+@pytest.mark.anyio
+async def test_the_pipeline_is_still_single_flight() -> None:
+    """One question at a time per connection, as before -- a pipeline run is
+    more expensive than a stream, not less."""
+    streamer = AnswerStreamer(StaticStreamingProvider(), None, FakeAnswerer(reply()))
+    socket = FakeSocket()
+    connection = Connection(id="c1", socket=socket)
+
+    async def hold(*_a: object, **_k: object) -> AssistantReply:
+        await asyncio.sleep(0.05)
+        return reply()
+
+    streamer._answerer.answer = hold  # type: ignore[method-assign]
+    first = asyncio.create_task(streamer.answer(connection, "one"))
+    await asyncio.sleep(0)
+    await streamer.answer(connection, "two")
+    await first
+
+    assert any(f.get("code") == BUSY_CODE for f in socket.sent)
+
+
+# --------------------------------------------------------------------------
+# Chunking
+
+
+@pytest.mark.parametrize(
+    "text",
+    (
+        "short",
+        ANSWER,
+        "Trailing whitespace matters   ",
+        "multiple   internal    spaces",
+        "a" * 200,
+    ),
+)
+def test_chunking_reproduces_the_text_exactly(text: str) -> None:
+    assert "".join(chunk(text)) == text
+
+
+def test_chunking_an_empty_answer_yields_nothing() -> None:
+    assert list(chunk("")) == []
+
+
+def test_chunking_produces_more_than_one_piece_for_a_real_answer() -> None:
+    """Otherwise the client's incremental rendering has nothing to render."""
+    assert len(list(chunk(ANSWER))) > 1

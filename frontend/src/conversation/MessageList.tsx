@@ -33,11 +33,17 @@ export function MessageList({ turns, sending }: { turns: Turn[]; sending: boolea
               {turn.streaming ? <span className="caret" aria-hidden="true" /> : null}
             </p>
             {turn.role === 'assistant' ? <Citations citations={turn.citations} /> : null}
-            {turn.role === 'assistant' && turn.streamed && !turn.streaming ? (
-              // An absence of sources must not read as "none were needed":
-              // the streaming path answers in prose and produces none.
+            {turn.role === 'assistant' &&
+            turn.streamed &&
+            !turn.streaming &&
+            !turn.grounded ? (
+              // Only for answers that really are unsourced. The socket runs
+              // the grounded pipeline now, and falls back to prose only when
+              // the server has no database -- so this marks that fallback
+              // rather than every streamed reply. An absence of sources must
+              // not read as "none were needed".
               <p className="message__note message__note--quiet">
-                Streamed reply — not drawn from documentation.
+                Unsourced reply — the knowledge base was not available.
               </p>
             ) : null}
             {turn.escalated ? (

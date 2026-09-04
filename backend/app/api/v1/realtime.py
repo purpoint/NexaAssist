@@ -37,6 +37,7 @@ from app.llm.streaming import StreamingLLMProvider, build_streaming_provider
 from app.realtime.answers import AnswerStreamer
 from app.realtime.connection import Connection, ConnectionRegistry
 from app.realtime.conversations import SessionTurnRecorder, TurnRecorder
+from app.realtime.pipeline import Answerer, SessionAnswerer
 from app.realtime.envelope import (
     Ask,
     ClientMessageType,
@@ -91,6 +92,16 @@ def get_streaming_provider() -> StreamingLLMProvider:
     already substitutes the completion provider and the embedder.
     """
     return build_streaming_provider(get_settings())
+
+
+def get_answerer() -> Answerer:
+    """The pipeline a socket answers from.
+
+    A dependency for the same reason the others are: a test substitutes a
+    deterministic one rather than reaching a database and a model. It opens a
+    short-lived session per question, so the socket never holds one.
+    """
+    return SessionAnswerer()
 
 
 def get_turn_recorder() -> TurnRecorder:
@@ -169,6 +180,7 @@ async def realtime(
     registry: ConnectionRegistry = Depends(get_registry),
     provider: StreamingLLMProvider = Depends(get_streaming_provider),
     recorder: TurnRecorder = Depends(get_turn_recorder),
+    answerer: Answerer = Depends(get_answerer),
     authenticator: Authenticator = Depends(get_authenticator),
     authorizer: Authorizer = Depends(get_authorizer),
     tickets: TicketStore = Depends(get_ticket_store),
@@ -203,9 +215,17 @@ async def realtime(
         # is defined over.
         # The recorder is scoped to whoever the ticket named, so a realtime
         # turn is written under the same ownership rules as an HTTP one.
-        recorder.scope_to(authorizer.scope_for(identity))
+        scope = authorizer.scope_for(identity)
+        recorder.scope_to(scope)
+        # The pipeline is scoped the same way: a socket's retrieval, its
+        # conversation and any review item it files all belong to whoever the
+        # ticket named, exactly as they would over HTTP.
+        answerer.scope_to(scope)
         await _serve(
-            connection, websocket, settings, AnswerStreamer(provider, recorder)
+            connection,
+            websocket,
+            settings,
+            AnswerStreamer(provider, recorder, answerer),
         )
     except WebSocketDisconnect:
         # The ordinary way a socket ends.

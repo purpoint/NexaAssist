@@ -719,10 +719,9 @@ client ──ws──▶ /api/v1/ws
   can stream, and structured output pulls the other way: a schema-validated
   object is only valid once complete, so a stream of partial JSON would be a
   stream of things that are not yet the thing.
-- **This is not the grounded path.** `POST /api/v1/documents/answer` rebuilds
-  citations from retrieval, and citations can only exist once an answer is
-  whole. What streams here is prose, and nothing it produces is presented as
-  sourced.
+- **This was not the grounded path, and is now.** It streamed prose, which
+  meant the client -- which prefers the socket whenever one is open -- never
+  showed a citation. See *Grounded answers over the socket* below.
 - **The HTTP surface is unchanged.** OpenAPI is byte-identical across all of
   M14.
 
@@ -985,7 +984,7 @@ request ─▶ span (M16) ─▶ metrics ─▶ log line carrying the trace id
 ```
 ConversationScreen
    ├─ useConversation ─┬─ ApiClient   POST /assistant/messages  (grounded)
-   │                   └─ useRealtime ws /ws  ask ▸ delta… ▸ complete
+   │                   └─ useRealtime ws /ws  ask ▸ delta… ▸ complete (grounded)
    └─ useReadiness ────── GET /ready
 ```
 
@@ -1018,9 +1017,10 @@ ConversationScreen
   an open question, so a late frame cannot append itself to the next answer;
   and the `complete` frame *replaces* the accumulated text rather than being
   appended to it, because it carries the whole answer.
-- **A streamed reply says it is not drawn from documentation.** The realtime
-  path answers in prose and produces no citations; without saying so, absent
-  sources would read as "none were needed", which is a quieter kind of lie.
+- **A reply says whether it is sourced.** The socket runs the grounded
+  pipeline, so a streamed answer normally carries citations and the warning is
+  reserved for the unsourced fallback. Without saying so, absent sources would
+  read as "none were needed", which is a quieter kind of lie.
 - **The key is entered in the browser and stored there.** It is sent as a
   header, never in a URL where proxies, history and referrers would see it, and
   the panel is told only *whether* a key exists, never what it is. Storage is
@@ -1154,6 +1154,43 @@ defects that passed on every developer machine because those machines had a
 while resolving a WebSocket's dependencies hit a handler that assumed HTTP and
 crashed instead of closing the socket.
 
+## Grounded answers over the socket
+
+The socket held a streaming provider and forwarded whatever it produced. That
+was fast and unsourced, and because the client prefers the socket whenever one
+is open, it meant the behaviour the product exists for -- an answer that cites
+the document it came from, or escalates rather than guessing -- was reachable
+over HTTP and invisible in the UI. Asked about shipping, the socket improvised
+"3 to 7 business days" while the knowledge base said 3 to 5 domestic and 7 to
+14 international, and labelled its own answer as not drawn from documentation.
+The label was honest. The design was wrong.
+
+An `ask` now runs the same pipeline as `POST /api/v1/assistant/messages`, and
+the finished answer is sent as deltas.
+
+- **The ordering is forced, not chosen.** Policy can replace a reply outright:
+  a billing question is answered by a person, not by whatever the model was
+  midway through saying. Streaming tokens as they are generated would mean
+  sending text policy has not seen and may overrule, so a client would watch
+  an answer retract itself. Deltas are therefore a presentation of an approved
+  answer rather than a view of one being produced. The client keeps its
+  incremental rendering; what it renders is what was actually approved.
+- **The cost is time to first token.** Nothing can be sent until classify,
+  retrieve, answer and policy have all run -- seconds rather than milliseconds.
+  A sourced answer a few seconds later beats a fluent wrong one immediately,
+  which is the whole trade this system exists to make.
+- **The session lives for one question.** Same reasoning as the turn recorder:
+  a socket lives for minutes and a session should not, or an idle client pins
+  a pool connection and holds a transaction open across long gaps.
+- **The pipeline records its own turns.** The streamer must not also record
+  them, or every exchange is written twice.
+- **`complete` carries `grounded`, `citations` and `escalated`.** A sourced
+  answer and a plausible guess look identical in a chat bubble, so the
+  difference is stated rather than left to the reader.
+- **No database means no pipeline**, and the socket falls back to unsourced
+  prose marked `grounded=false`. Degrading quietly into a worse answer that
+  still looks authoritative is the failure worth avoiding.
+
 ## Planned components
 
 _This section listed the layers that did not exist yet. Every one of them now
@@ -1178,5 +1215,5 @@ does, so it records where each landed instead._
   enforced only when a deployment turns it on. Tenancy is per API-key subject,
   not per customer._
 - Synchronous request/response only, or streaming and async jobs? _Answered:
-  all three. Synchronous over HTTP, streamed prose over the M14 socket, and
-  deferred work through the M13 queue._
+  all three. Synchronous over HTTP, streamed answers over the M14 socket --
+  from the same pipeline as HTTP -- and deferred work through the M13 queue._

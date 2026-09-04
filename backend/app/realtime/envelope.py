@@ -17,6 +17,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
 
+from app.schemas.document import Citation
+
 MAX_MESSAGE_BYTES = 64 * 1024
 """Largest frame accepted from a client.
 
@@ -129,6 +131,11 @@ class Complete(ServerMessage):
     the deltas already said, and does so deliberately: a client that renders
     incrementally can reconcile against it, and one that does not can skip the
     deltas altogether rather than reimplementing the concatenation rule.
+
+    ``grounded`` says which path produced the answer, and a client should say
+    so too. A sourced answer and a plausible-sounding guess look identical in
+    a chat bubble, which is exactly why the difference has to be stated rather
+    than left for the reader to infer.
     """
 
     type: Literal[ServerMessageType.COMPLETE] = ServerMessageType.COMPLETE
@@ -137,6 +144,22 @@ class Complete(ServerMessage):
     conversation_id: uuid.UUID | None = Field(
         default=None,
         description="The conversation this exchange was recorded against, if any.",
+    )
+    grounded: bool = Field(
+        default=False,
+        description=(
+            "True when the assistant pipeline produced this answer -- "
+            "classified, retrieved against the knowledge base, and checked by "
+            "policy. False when it is unsourced prose from the model."
+        ),
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="Sources for the answer. Empty is not the same as absent.",
+    )
+    escalated: bool = Field(
+        default=False,
+        description="True when policy handed the exchange to a person.",
     )
 
 

@@ -111,12 +111,25 @@ receives a ticket, and spends that on the handshake. The ticket is opaque,
 random, bound to one subject, single-use, and valid for a minute — so a leaked
 URL in a proxy log is worth nothing by the time anybody reads it.
 
+An `ask` runs the same pipeline as `POST /assistant/messages` — classified,
+answered from retrieved sources, checked by policy, escalated if a person is
+needed — and the finished answer is then sent as deltas. So a socket answer is
+grounded and cited exactly as an HTTP one is. It is not token-by-token
+generation, and cannot be: policy may replace a reply outright, and streaming
+text it has not approved would mean the client watching an answer retract
+itself.
+
 Frames are JSON with a `type` discriminator. From the client: `ping`, and `ask`
 to request an answer. From the server: `ready` once on connect (with a
 `connection_id` and `protocol_version`), `pong`, `delta` for each fragment of
-an answer, `complete` when a stream ends — carrying the assembled text, so a
-client that does not render incrementally can ignore the deltas — and `error`,
-in the same `code`/`message` shape as HTTP.
+an answer, `complete` when a stream ends, and `error`, in the same
+`code`/`message` shape as HTTP.
+
+`complete` carries the assembled text — so a client that does not render
+incrementally can ignore the deltas — plus `grounded`, `citations` and
+`escalated`. Check `grounded`: it is false when the server had no knowledge
+base and fell back to unsourced prose, and a guess and a cited answer look
+identical in a chat bubble.
 
 Concatenating the deltas of a stream reproduces the answer exactly. A frame
 larger than 64 KiB closes the connection with 1009 rather than being answered,

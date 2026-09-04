@@ -12,6 +12,7 @@
  * status so the optimism is visible rather than a lie.
  */
 
+import type { StreamResult } from '../realtime/useRealtime';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import type { ApiClient } from '../api/client';
@@ -153,18 +154,27 @@ export function useConversation(client: ApiClient) {
   }, []);
 
   const completeStream = useCallback(
-    (text: string, streamConversationId: string | null) => {
+    (text: string, streamConversationId: string | null, result: StreamResult) => {
       const target = streamingId.current;
       streamingId.current = null;
       setSending(false);
       if (target === null) return;
       // The complete frame carries the whole answer, so it replaces the
       // accumulation rather than being appended to it -- otherwise a
-      // duplicated delta would show twice.
+      // duplicated delta would show twice. It also carries what the answer
+      // turned out to be: sourced or not, escalated or not.
       setTurns((current) =>
         current.map((turn) =>
           turn.id === target
-            ? { ...turn, text, status: 'sent' as const, streaming: false }
+            ? {
+                ...turn,
+                text,
+                status: 'sent' as const,
+                streaming: false,
+                citations: result.citations,
+                escalated: result.escalated,
+                grounded: result.grounded,
+              }
             : turn.status === 'pending'
               ? { ...turn, status: 'sent' as const }
               : turn,

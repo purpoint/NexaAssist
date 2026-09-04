@@ -42,6 +42,25 @@ beforeEach(() => {
   resetTurnIds();
 });
 
+/**
+ * What a stream turned out to be. The socket runs the grounded pipeline now,
+ * so every completion states whether the answer was sourced.
+ */
+const prose = { grounded: false, citations: [], escalated: false };
+const sourced = {
+  grounded: true,
+  citations: [
+    {
+      document_id: 'doc-1',
+      document_title: 'Shipping and delivery',
+      ordinal: 0,
+      excerpt: 'Standard shipping takes 3 to 5 business days.',
+      similarity: 0.83,
+    },
+  ],
+  escalated: false,
+};
+
 describe('streaming', () => {
   it('fills a reply as deltas arrive and finishes on complete', async () => {
     const client = stubClient({ sendMessage: vi.fn() });
@@ -59,14 +78,19 @@ describe('streaming', () => {
     act(() => result.current.appendDelta('beta'));
     expect(result.current.turns[1].text).toBe('alpha beta');
 
-    act(() => result.current.completeStream('alpha beta', 'conv-1'));
+    act(() => result.current.completeStream('alpha beta', 'conv-1', sourced));
 
     expect(result.current.turns[1]).toMatchObject({
       text: 'alpha beta',
       status: 'sent',
       streaming: false,
       streamed: true,
+      // The completion says what the answer was, and the turn keeps it: a
+      // sourced answer over the socket is now the ordinary case.
+      grounded: true,
+      escalated: false,
     });
+    expect(result.current.turns[1].citations).toHaveLength(1);
     expect(result.current.turns[0].status).toBe('sent');
     expect(result.current.sending).toBe(false);
   });
@@ -80,7 +104,7 @@ describe('streaming', () => {
       void result.current.send('why?', { stream: () => true });
     });
     act(() => result.current.appendDelta('alpha beta'));
-    act(() => result.current.completeStream('alpha beta', null));
+    act(() => result.current.completeStream('alpha beta', null, prose));
 
     expect(result.current.turns[1].text).toBe('alpha beta');
   });
@@ -90,7 +114,7 @@ describe('streaming', () => {
     act(() => {
       void result.current.send('why?', { stream: () => true });
     });
-    act(() => result.current.completeStream('done', 'conv-9'));
+    act(() => result.current.completeStream('done', 'conv-9', prose));
 
     expect(result.current.conversationId).toBe('conv-9');
     expect(window.localStorage.getItem(CONVERSATION_STORAGE_KEY)).toBe('conv-9');
@@ -165,12 +189,59 @@ describe('streaming', () => {
     await act(async () => {
       await result.current.send('first', { stream: () => true });
     });
-    act(() => result.current.completeStream('one', null));
+    act(() => result.current.completeStream('one', null, prose));
 
     await act(async () => {
       await result.current.send('second', { stream: () => true });
     });
 
     await waitFor(() => expect(result.current.turns).toHaveLength(4));
+  });
+});
+
+describe('what a streamed answer claims about itself', () => {
+  it('keeps the citations a grounded stream arrived with', () => {
+    // The reason the socket runs the pipeline at all. Before this, a client
+    // that preferred the socket -- which it does whenever one is open -- never
+    // saw a source, however well grounded the answer was.
+    const { result } = renderHook(() => useConversation(stubClient()));
+    act(() => {
+      void result.current.send('how long is shipping?', { stream: () => true });
+    });
+    act(() => result.current.completeStream('3 to 5 days.', null, sourced));
+
+    expect(result.current.turns[1].grounded).toBe(true);
+    expect(result.current.turns[1].citations[0].document_title).toBe(
+      'Shipping and delivery',
+    );
+  });
+
+  it('marks an unsourced fallback as unsourced', () => {
+    // The server answers in prose when it has no knowledge base. That is a
+    // worse answer and has to be shown as one.
+    const { result } = renderHook(() => useConversation(stubClient()));
+    act(() => {
+      void result.current.send('how long is shipping?', { stream: () => true });
+    });
+    act(() => result.current.completeStream('Usually a few days.', null, prose));
+
+    expect(result.current.turns[1].grounded).toBe(false);
+    expect(result.current.turns[1].citations).toEqual([]);
+  });
+
+  it('carries an escalation through', () => {
+    const { result } = renderHook(() => useConversation(stubClient()));
+    act(() => {
+      void result.current.send('refund me', { stream: () => true });
+    });
+    act(() =>
+      result.current.completeStream('Passed to an agent.', null, {
+        grounded: true,
+        citations: [],
+        escalated: true,
+      }),
+    );
+
+    expect(result.current.turns[1].escalated).toBe(true);
   });
 });

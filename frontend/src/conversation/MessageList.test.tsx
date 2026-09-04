@@ -121,3 +121,40 @@ describe('rendering', () => {
     ).toBeInTheDocument();
   });
 });
+
+describe('what the reader is told about sourcing', () => {
+  it('warns when a streamed answer was not grounded', () => {
+    // The server fell back to prose because it had no knowledge base. An
+    // absence of citations must not read as "no sources were needed".
+    render(
+      <MessageList
+        turns={[turn({ role: 'assistant', streamed: true, grounded: false })]}
+        sending={false}
+      />,
+    );
+    expect(screen.getByText(/Unsourced reply/)).toBeInTheDocument();
+  });
+
+  it('does not warn when a streamed answer came from the pipeline', () => {
+    // This is the regression the change was made for. Every socket reply used
+    // to carry the warning, including ones that cited a document, which
+    // trained a reader to ignore it.
+    render(
+      <MessageList
+        turns={[turn({ role: 'assistant', streamed: true, grounded: true })]}
+        sending={false}
+      />,
+    );
+    expect(screen.queryByText(/Unsourced reply/)).not.toBeInTheDocument();
+  });
+
+  it('does not warn about an answer that never streamed', () => {
+    render(
+      <MessageList
+        turns={[turn({ role: 'assistant', streamed: false })]}
+        sending={false}
+      />,
+    );
+    expect(screen.queryByText(/Unsourced reply/)).not.toBeInTheDocument();
+  });
+});

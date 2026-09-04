@@ -8,6 +8,8 @@
  * type the server does not send is a frame that will never arrive.
  */
 
+import type { Citation } from '../api/types';
+
 export type ClientFrame =
   | { type: 'ping' }
   | { type: 'ask'; question: string; conversation_id?: string | null };
@@ -32,6 +34,18 @@ export interface CompleteFrame {
   text: string;
   deltas: number;
   conversation_id: string | null;
+  /**
+   * True when the assistant pipeline produced this answer: classified,
+   * retrieved against the knowledge base, and checked by policy. False when
+   * it is unsourced prose, which the socket falls back to when the server has
+   * no database.
+   *
+   * Optional because a server from before the socket ran the pipeline does
+   * not send it, and absent must mean "not grounded" rather than crash.
+   */
+  grounded?: boolean;
+  citations?: Citation[];
+  escalated?: boolean;
 }
 
 export interface ErrorFrame {

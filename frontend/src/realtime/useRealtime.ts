@@ -25,7 +25,22 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import type { Citation } from '../api/types';
 import { parseServerFrame, type ClientFrame } from './frames';
+
+/**
+ * What a finished stream turned out to be.
+ *
+ * The socket now runs the same pipeline as the HTTP path, so a streamed
+ * answer can be sourced and can have been handed to a person. The UI has to
+ * be able to tell -- an unsourced guess and a cited answer look identical in
+ * a bubble.
+ */
+export interface StreamResult {
+  grounded: boolean;
+  citations: Citation[];
+  escalated: boolean;
+}
 
 export type RealtimeState = 'connecting' | 'open' | 'reconnecting' | 'unavailable';
 
@@ -35,7 +50,7 @@ const MAX_DELAY_MS = 8_000;
 
 export interface RealtimeHandlers {
   onDelta: (text: string) => void;
-  onComplete: (text: string, conversationId: string | null) => void;
+  onComplete: (text: string, conversationId: string | null, result: StreamResult) => void;
   onError: (code: string, message: string) => void;
 }
 
@@ -133,7 +148,14 @@ export function useRealtime(
         case 'complete':
           if (awaitingRef.current) {
             awaitingRef.current = false;
-            handlersRef.current.onComplete(frame.text, frame.conversation_id);
+            handlersRef.current.onComplete(frame.text, frame.conversation_id, {
+              // Absent means not grounded: an older server that does not send
+              // the field answered in prose, and saying otherwise would be a
+              // sourcing claim nobody made.
+              grounded: frame.grounded ?? false,
+              citations: frame.citations ?? [],
+              escalated: frame.escalated ?? false,
+            });
           }
           break;
         case 'error':
