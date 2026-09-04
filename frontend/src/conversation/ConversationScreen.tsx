@@ -12,27 +12,34 @@ import { useEffect, useState, type FormEvent } from 'react';
 import type { ApiClient } from '../api/client';
 import { EmptyState, ErrorBanner, Spinner } from '../components/primitives';
 import { socketUrlWithTicket, WS_URL } from '../config';
-import { useRealtime, type SocketFactory } from '../realtime/useRealtime';
+import { useRealtime, type RealtimeState, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
-import { useConversation } from './useConversation';
+import type { useConversation } from './useConversation';
+import { UNTITLED, type useConversationIndex } from './useConversationIndex';
 
 export function ConversationScreen({
   client,
+  conversation,
+  index,
   socketFactory,
   onAuthRequired,
+  onRealtimeState,
   authenticated = false,
 }: {
   client: ApiClient;
+  /** Owned by the root, because the sidebar switches between conversations. */
+  conversation: ReturnType<typeof useConversation>;
+  index: ReturnType<typeof useConversationIndex>;
   /** Injected only by tests; production uses the global WebSocket. */
   socketFactory?: SocketFactory;
   /** Told when a request was refused for want of a credential. */
   onAuthRequired?: (required: boolean) => void;
+  /** Reports the socket's state so the shell can show it. */
+  onRealtimeState?: (state: RealtimeState) => void;
   /** True when a key is configured, so the socket needs a ticket. */
   authenticated?: boolean;
 }) {
-  const conversation = useConversation(client);
-
   useEffect(() => {
     onAuthRequired?.(conversation.authRequired);
   }, [conversation.authRequired, onAuthRequired]);
@@ -56,22 +63,35 @@ export function ConversationScreen({
     },
   );
 
+  useEffect(() => {
+    onRealtimeState?.(realtime.state);
+  }, [realtime.state, onRealtimeState]);
+
   // Streaming is attempted, never assumed. `ask` returns false when the
   // socket is not open, and `send` falls back to HTTP in that case.
-  const handleSend = (text: string) =>
+  const handleSend = (text: string) => {
+    // Name the conversation from its first question, so the sidebar shows
+    // something a reader can recognise.
+    if (conversation.conversationId) {
+      index.nameIfUnnamed(conversation.conversationId, text);
+    }
     void conversation.send(text, {
       stream: realtime.ready ? realtime.ask : undefined,
     });
+  };
 
   const startConversation = async (event: FormEvent) => {
     event.preventDefault();
     if (!email.trim()) return;
-    await conversation.start(email.trim());
+    const id = await conversation.start(email.trim());
+    // Indexed only once the server has actually opened it: an entry for a
+    // conversation that failed to start would point at nothing.
+    if (id) index.remember(id, UNTITLED);
   };
 
   return (
     <section className="conversation" aria-label="Assistant">
-      <header className="conversation__header">
+      <header className="conversation__head">
         <div>
           <h1 className="conversation__title">Support assistant</h1>
           <p className="conversation__subtitle">
@@ -80,55 +100,58 @@ export function ConversationScreen({
               : 'Ask a question, or start a conversation to keep the history.'}
           </p>
         </div>
-        {conversation.conversationId ? (
-          <button type="button" className="button button--quiet" onClick={conversation.reset}>
-            New conversation
-          </button>
-        ) : null}
       </header>
 
-      {conversation.conversationId ? null : (
-        <form className="starter" onSubmit={startConversation}>
-          <label className="starter__label" htmlFor="starter-email">
-            Email
-          </label>
-          <input
-            id="starter-email"
-            className="starter__input"
-            type="email"
-            value={email}
-            placeholder="you@example.com"
-            onChange={(event) => setEmail(event.target.value)}
-          />
-          <button
-            type="submit"
-            className="button"
-            disabled={conversation.loading || email.trim().length === 0}
-          >
-            Start conversation
-          </button>
-        </form>
-      )}
+      {/* The body scrolls; the composer below it does not, so it never
+          scrolls away from somebody mid-conversation. */}
+      <div className="conversation__body">
+        <div className="conversation__inner">
+          {conversation.conversationId ? null : (
+            <form className="starter" onSubmit={startConversation}>
+              <div className="starter__field">
+                <label className="starter__label" htmlFor="starter-email">
+                  Email
+                </label>
+                <input
+                  id="starter-email"
+                  className="field"
+                  type="email"
+                  value={email}
+                  placeholder="you@example.com"
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </div>
+              <button
+                type="submit"
+                className="button"
+                disabled={conversation.loading || email.trim().length === 0}
+              >
+                Start conversation
+              </button>
+            </form>
+          )}
 
-      {/* The key panel already explains a 401 and offers the fix; a banner
-          beside it would say the same thing twice. */}
-      {conversation.error && !conversation.authRequired ? (
-        <ErrorBanner message={conversation.error} />
-      ) : null}
+          {/* The key panel already explains a 401 and offers the fix; a banner
+              beside it would say the same thing twice. */}
+          {conversation.error && !conversation.authRequired ? (
+            <ErrorBanner message={conversation.error} />
+          ) : null}
 
-      {conversation.loading && conversation.turns.length === 0 ? (
-        <div className="conversation__loading">
-          <Spinner label="Loading your conversation" />
+          {conversation.loading && conversation.turns.length === 0 ? (
+            <div className="conversation__loading">
+              <Spinner label="Loading your conversation" />
+            </div>
+          ) : null}
+
+          {conversation.turns.length === 0 && !conversation.loading ? (
+            <EmptyState title="No messages yet">
+              Ask anything about your account, a charge, or how something works.
+            </EmptyState>
+          ) : (
+            <MessageList turns={conversation.turns} sending={conversation.sending} />
+          )}
         </div>
-      ) : null}
-
-      {conversation.turns.length === 0 && !conversation.loading ? (
-        <EmptyState title="No messages yet">
-          Ask anything about your account, a charge, or how something works.
-        </EmptyState>
-      ) : (
-        <MessageList turns={conversation.turns} sending={conversation.sending} />
-      )}
+      </div>
 
       <Composer disabled={conversation.sending} onSend={handleSend} />
     </section>

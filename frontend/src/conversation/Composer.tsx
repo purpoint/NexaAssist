@@ -38,12 +38,13 @@ export function Composer({
 
   return (
     <form className="composer" onSubmit={handleSubmit}>
+      <div className="composer__inner">
       <label className="visually-hidden" htmlFor="composer-input">
         Your message
       </label>
       <textarea
         id="composer-input"
-        className="composer__input"
+        className="field composer__input"
         rows={2}
         value={text}
         placeholder="Ask about billing, your account, or how something works…"
@@ -58,6 +59,7 @@ export function Composer({
       >
         Send
       </button>
+      </div>
     </form>
   );
 }
