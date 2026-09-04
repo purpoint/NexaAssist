@@ -31,50 +31,74 @@
   min-width: 0;
 }
 
+/* The tile is the product's identity, so it is the largest thing in the
+   header and the only place the accent appears as a fill. */
 .brand__mark {
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
   flex: none;
   display: grid;
   place-items: center;
   background: var(--accent);
   color: #fff;
+  box-shadow: var(--shadow);
 }
 
 .brand__text {
   display: flex;
   flex-direction: column;
+  justify-content: center;
   min-width: 0;
-  line-height: 1.15;
 }
 
 .brand__name {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   font-weight: 600;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.015em;
+  line-height: 1.15;
 }
 
-/* The descriptor is what tells a first-time viewer what this is. It is small
-   because it is context, not a headline. */
+/* The descriptor is what tells a first-time viewer what this is. Small,
+   spaced and quiet: it is context, not a headline, and it needs air between
+   itself and the name or the two read as one cramped block. */
 .brand__descriptor {
+  margin-top: 2px;
   font-size: var(--text-xs);
-  color: var(--text-muted);
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  /* --text-muted on this surface is about 4:1, which fails AA for text this
+     small. Hierarchy comes from size, weight and case here, not from making
+     the text hard to read. */
+  color: var(--text-secondary);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* Secondary to the identity: grouped, quiet, and set on a recessed panel so
+   they read as instrumentation rather than as navigation. */
 .shell__controls {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--space-1);
+}
+
+.shell__statuses {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
 }
 
 .shell__divider {
   width: 1px;
-  height: 20px;
+  height: 22px;
+  margin: 0 var(--space-2);
   background: var(--border);
   flex: none;
 }
@@ -110,6 +134,11 @@
 .sidebar__new {
   width: 100%;
   justify-content: flex-start;
+  font-weight: 500;
+}
+
+.sidebar__new:hover:not(:disabled) {
+  background: var(--surface-hover);
 }
 
 .sidebar__group + .sidebar__group {
@@ -170,11 +199,16 @@
   margin-top: 1px;
 }
 
+/* An empty sidebar should look finished rather than broken, so it is a
+   bordered panel that explains itself, not a stray line of grey text. */
 .sidebar__empty {
   margin: 0;
-  padding: 0 var(--space-2);
+  padding: var(--space-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
   font-size: var(--text-sm);
   color: var(--text-muted);
+  text-align: center;
 }
 
 .sidebar__foot {
@@ -242,14 +276,15 @@
     z-index: 15;
   }
 
-  .brand__descriptor {
-    display: none;
-  }
 }
 
 @media (max-width: 560px) {
   .shell__header {
     padding: 0 var(--space-3);
+  }
+
+  .brand__descriptor {
+    display: none;
   }
 
   /* The status label collapses to its dot; the accessible name stays. */

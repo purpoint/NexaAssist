@@ -97,24 +97,37 @@ export const CloseIcon = (props: IconProps) =>
 export const ChevronIcon = (props: IconProps) =>
   svg(<path d="M6 3.5L10.5 8 6 12.5" />, props);
 
-/** The product mark. A monogram, not a mascot. */
-export function BrandMark({ size = 16 }: IconProps) {
+/**
+ * The product mark.
+ *
+ * Two bubbles -- a question asked and an answer returned -- rather than a
+ * letter in a square, which is what a placeholder looks like. They are set
+ * apart rather than overlapped: an overlap needs a knockout stroke in the
+ * colour of whatever sits behind the mark, and this one sits on an accent
+ * tile in the header and a tinted tile on the welcome screen. Separated
+ * shapes read correctly on both, and still read at 16px.
+ *
+ * Drawn in a 24-unit box and scaled, so the geometry stays exact at any size.
+ */
+export function BrandMark({ size = 24 }: IconProps) {
   return (
     <svg
       width={size}
       height={size}
-      viewBox="0 0 16 16"
+      viewBox="0 0 24 24"
       fill="none"
       aria-hidden="true"
       focusable="false"
     >
+      {/* The question: outlined, with a tail. */}
       <path
-        d="M4 12V4l8 8V4"
+        d="M4.5 3.5h9a3 3 0 013 3v3.5a3 3 0 01-3 3h-4L6 16.5V13H4.5a3 3 0 01-3-3V6.5a3 3 0 013-3z"
         stroke="currentColor"
-        strokeWidth="1.9"
-        strokeLinecap="round"
+        strokeWidth="1.7"
         strokeLinejoin="round"
       />
+      {/* The answer: solid, because it is the thing the product returns. */}
+      <rect x="12.5" y="14" width="10" height="7.5" rx="2.4" fill="currentColor" />
     </svg>
   );
 }

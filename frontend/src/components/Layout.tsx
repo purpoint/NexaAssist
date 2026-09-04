@@ -53,19 +53,24 @@ export function Layout({
             </button>
           ) : null}
           <span className="brand__mark">
-            <BrandMark size={15} />
+            <BrandMark size={19} />
           </span>
           <span className="brand__text">
             <span className="brand__name">NexaAssist</span>
             {/* What the product is, said once, where a first-time viewer
                 will look before anything else. */}
-            <span className="brand__descriptor">AI Customer Support Engine</span>
+            <span className="brand__descriptor">AI Support Platform</span>
           </span>
         </div>
 
         <div className="shell__controls">
-          {realtime ? <RealtimeStatus state={realtime} /> : null}
-          <StatusDot status={connection} />
+          {/* Grouped, because they answer one question between them -- is the
+              product working -- and separated from the control beside them,
+              which does something. */}
+          <span className="shell__statuses">
+            {realtime ? <RealtimeStatus state={realtime} /> : null}
+            <StatusDot status={connection} />
+          </span>
           <span className="shell__divider" aria-hidden="true" />
           <button
             type="button"

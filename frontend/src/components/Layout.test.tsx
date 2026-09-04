@@ -24,7 +24,7 @@ describe('identity', () => {
     // The single most important line for somebody opening this cold.
     render(shell());
     expect(screen.getByText('NexaAssist')).toBeInTheDocument();
-    expect(screen.getByText('AI Customer Support Engine')).toBeInTheDocument();
+    expect(screen.getByText('AI Support Platform')).toBeInTheDocument();
   });
 
   it('renders the screen it was given', () => {
@@ -35,6 +35,25 @@ describe('identity', () => {
   it('exposes one main landmark to skip to', () => {
     render(shell());
     expect(screen.getByRole('main')).toBeInTheDocument();
+  });
+
+  it('keeps the mark decorative, since the name is beside it', () => {
+    // A logo that announces itself makes a screen reader say the product
+    // name twice.
+    const { container } = render(shell());
+    const mark = container.querySelector('.brand__mark svg');
+    expect(mark).toHaveAttribute('aria-hidden', 'true');
+  });
+});
+
+describe('the status group', () => {
+  it('keeps both indicators together and apart from the control', () => {
+    // They answer one question between them -- is the product working --
+    // and the button beside them does something instead.
+    const { container } = render(shell({ realtime: 'open' }));
+    const group = container.querySelector('.shell__statuses');
+    expect(group?.children).toHaveLength(2);
+    expect(group?.querySelector('button')).toBeNull();
   });
 });
 
