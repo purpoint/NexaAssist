@@ -16,6 +16,7 @@ from app.rag.embeddings import EmbeddingProvider
 from app.routing.handlers import IntentHandler
 from app.routing.intent_handlers import (
     AgentHandler,
+    DocumentedFirstHandler,
     FallbackHandler,
     KnowledgeBaseHandler,
 )
@@ -48,9 +49,20 @@ def build_router(
     # Documented answers.
     registry.register(IntentCategory.PRODUCT_QUESTION, knowledge_base)
     registry.register(IntentCategory.ACCOUNT, knowledge_base)
+    # Billing splits in two and the classifier cannot split it: "what is your
+    # refund window" is a documented policy, "I was charged twice" needs
+    # somebody to look at an account, and both arrive as BILLING. So the
+    # documentation is asked first and the agent gets what it cannot answer.
+    # Routing straight to the agent made the refund policy unreachable through
+    # the assistant -- it was retrieved by /documents/answer and escalated by
+    # the assistant, which is the same question getting two different answers.
+    registry.register(
+        IntentCategory.BILLING, DocumentedFirstHandler(knowledge_base, agent)
+    )
     # Needs to inspect account state, so the agent and its tools.
-    registry.register(IntentCategory.BILLING, agent)
     registry.register(IntentCategory.TECHNICAL_SUPPORT, agent)
+    # Not documented-first on purpose: somebody complaining wants a person,
+    # and answering from a policy document reads as being brushed off.
     registry.register(IntentCategory.COMPLAINT, agent)
     # OTHER always reaches the fallback via the router's no-category rule; it is
     # registered anyway so the table is complete and require_complete() means

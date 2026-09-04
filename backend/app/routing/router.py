@@ -39,7 +39,13 @@ class RouteReason(StrEnum):
 
 
 class RoutingDecision(BaseModel):
-    """Which handler was chosen, and why."""
+    """Which handler was chosen, and why.
+
+    After a message has actually been routed, ``handler`` names the handler
+    that produced the reply. Before that -- from :meth:`IntentRouter.decide` --
+    it names what the table would choose, which for a delegating handler is
+    the pair rather than whichever half ends up answering.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -125,6 +131,15 @@ class IntentRouter:
         response: HandlerResponse = await handler.handle(
             HandlerRequest(message=message, analysis=analysis)
         )
+
+        # The decision names what the table chose; the response names what
+        # actually answered. They differ only for a handler that delegates --
+        # billing tries the documentation before the agent -- and there the
+        # useful answer is which one produced the reply, not the name of the
+        # pair. Reported rather than only logged, so a caller can tell a
+        # documented answer from an agent's without inferring it from whether
+        # citations happen to be present.
+        decision = decision.model_copy(update={"handler": response.handler})
 
         # Policy runs after the handler, on what would actually be sent, and
         # the handler cannot overrule it.

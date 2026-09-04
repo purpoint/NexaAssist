@@ -136,11 +136,19 @@ async def test_the_knowledge_base_reports_honestly_when_undocumented(
 
 
 @pytest.mark.anyio
-async def test_a_billing_question_runs_the_agent(session: AsyncSession) -> None:
+async def test_a_billing_question_the_documents_cannot_answer_runs_the_agent(
+    session: AsyncSession,
+) -> None:
+    """The half of billing that genuinely needs somebody to look at an account.
+
+    ``answered=False`` is the condition that decides it: the grounded answerer
+    reports honestly when retrieval could not support an answer, and that is
+    exactly when the agent should get the message.
+    """
     await TicketService(session).create(
         customer_email="ada@example.com", subject="Charged twice", body="Refund please."
     )
-    used = provider(final_answer="Your ticket is open.")
+    used = provider(answered=False, final_answer="Your ticket is open.")
 
     reply = await router_over(session, used).route(
         "why was I charged twice", analysis(IntentCategory.BILLING)
@@ -151,15 +159,62 @@ async def test_a_billing_question_runs_the_agent(session: AsyncSession) -> None:
     assert "AgentDecision" in used.schemas
 
 
+@pytest.mark.anyio
+async def test_a_documented_billing_question_is_answered_from_the_documents(
+    session: AsyncSession,
+) -> None:
+    """The other half, and the reason this route changed.
+
+    "What is your refund window" is a policy written down in the knowledge
+    base. Routing every billing message straight to the agent made that policy
+    unreachable through the assistant -- /documents/answer retrieved it and the
+    assistant escalated it, which is one question with two answers.
+    """
+    await DocumentService(session, HashingEmbeddingProvider()).ingest(
+        title="Refunds", content=REFUNDS
+    )
+    used = provider(answered=True)
+
+    reply = await router_over(session, used).route(
+        "what is your refund window", analysis(IntentCategory.BILLING)
+    )
+
+    assert reply.decision.handler == "knowledge_base"
+    assert reply.citations, "a documented answer must carry its sources"
+    # The agent is not consulted at all when the documentation sufficed.
+    assert "AgentDecision" not in used.schemas
+
+
 @pytest.mark.parametrize(
     "category",
-    [IntentCategory.BILLING, IntentCategory.TECHNICAL_SUPPORT, IntentCategory.COMPLAINT],
+    [IntentCategory.TECHNICAL_SUPPORT, IntentCategory.COMPLAINT],
 )
 @pytest.mark.anyio
 async def test_account_state_intents_route_to_the_agent(
     session: AsyncSession, category: IntentCategory
 ) -> None:
     assert router_over(session, provider()).decide(analysis(category)).handler == "agent"
+
+
+@pytest.mark.anyio
+async def test_billing_tries_the_documents_before_the_agent(
+    session: AsyncSession,
+) -> None:
+    """Billing is the one intent that is two questions wearing one label."""
+    decision = router_over(session, provider()).decide(analysis(IntentCategory.BILLING))
+    assert decision.handler == "knowledge_base+agent"
+
+
+@pytest.mark.anyio
+async def test_a_complaint_is_never_answered_from_a_policy_document(
+    session: AsyncSession,
+) -> None:
+    """Deliberately not documented-first: somebody complaining wants a person,
+    and quoting a policy at them reads as being brushed off."""
+    assert (
+        router_over(session, provider()).decide(analysis(IntentCategory.COMPLAINT)).handler
+        == "agent"
+    )
 
 
 @pytest.mark.parametrize(
