@@ -10,7 +10,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ApiClient } from '../api/client';
-import { ErrorBanner, Spinner } from '../components/primitives';
+import { ErrorNotice } from '../components/ErrorNotice';
+import { Spinner } from '../components/primitives';
 import { socketUrlWithTicket, WS_URL } from '../config';
 import { useRealtime, type RealtimeState, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
@@ -112,8 +113,19 @@ export function ConversationScreen({
         <div className="conversation__inner">
           {/* The key panel already explains a 401 and offers the fix; a banner
               beside it would say the same thing twice. */}
-          {conversation.error && !conversation.authRequired ? (
-            <ErrorBanner message={conversation.error} />
+          {conversation.failure && !conversation.authRequired ? (
+            <ErrorNotice
+              failure={conversation.failure}
+              onRetry={
+                // Only where there is something to repeat. A failed history
+                // load can be retried; a failed send left the question on
+                // screen, marked, and retrying it silently would be a second
+                // send the user did not ask for.
+                conversation.conversationId
+                  ? () => void conversation.loadHistory(conversation.conversationId as string)
+                  : undefined
+              }
+            />
           ) : null}
 
           {conversation.loading && conversation.turns.length === 0 ? (

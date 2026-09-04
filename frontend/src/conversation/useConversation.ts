@@ -60,6 +60,45 @@ function messageFor(caught: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
+/**
+ * What kind of failure this was, for the UI to present.
+ *
+ * A category rather than the exception, so a component decides what to show
+ * without reaching into an error class -- and so nothing that carries a stack
+ * ever reaches a render.
+ */
+export type FailureKind =
+  | 'offline'
+  | 'unauthenticated'
+  | 'rate_limited'
+  | 'server'
+  | 'request';
+
+export interface Failure {
+  kind: FailureKind;
+  /** The server's own message, which the contract guarantees is safe. */
+  message: string;
+  /** True when running the same request again could plausibly work. */
+  retryable: boolean;
+}
+
+function failureFrom(caught: unknown): Failure {
+  if (!(caught instanceof ApiError)) {
+    return { kind: 'server', message: messageFor(caught), retryable: true };
+  }
+  const kind: FailureKind =
+    caught.status === 0
+      ? 'offline'
+      : caught.unauthenticated
+        ? 'unauthenticated'
+        : caught.rateLimited
+          ? 'rate_limited'
+          : caught.status >= 500
+            ? 'server'
+            : 'request';
+  return { kind, message: caught.message, retryable: caught.retryable };
+}
+
 export interface SendOptions {
   /**
    * Stream over the socket when it can. Returns false when it could not, and
@@ -74,7 +113,7 @@ export function useConversation(client: ApiClient) {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [failure, setFailure] = useState<Failure | null>(null);
   // Distinct from `error`: a 401 is fixable by the user, and the fix is a
   // specific one. Collapsing it into the error banner would tell somebody
   // that something went wrong without telling them what to do about it.
@@ -90,7 +129,7 @@ export function useConversation(client: ApiClient) {
         const history = await client.getHistory(id);
         setTurns(history.messages.map(toTurn));
         setConversationId(id);
-        setError(null);
+        setFailure(null);
         setAuthRequired(false);
       } catch (caught) {
         if (caught instanceof ApiError && caught.status === 404) {
@@ -102,7 +141,7 @@ export function useConversation(client: ApiClient) {
           setTurns([]);
         } else {
           setAuthRequired(isUnauthenticated(caught));
-          setError(messageFor(caught));
+          setFailure(failureFrom(caught));
         }
       } finally {
         setLoading(false);
@@ -126,12 +165,12 @@ export function useConversation(client: ApiClient) {
         writeStoredId(conversation.id);
         setConversationId(conversation.id);
         setTurns([]);
-        setError(null);
+        setFailure(null);
         setAuthRequired(false);
         return conversation.id;
       } catch (caught) {
         setAuthRequired(isUnauthenticated(caught));
-        setError(messageFor(caught));
+        setFailure(failureFrom(caught));
         return null;
       } finally {
         setLoading(false);
@@ -192,7 +231,10 @@ export function useConversation(client: ApiClient) {
     const target = streamingId.current;
     streamingId.current = null;
     setSending(false);
-    setError(message);
+    // A socket error frame carries the server's code and message but no HTTP
+    // status; treat it as a server-side failure worth retrying, which is what
+    // every code the socket can send actually is.
+    setFailure({ kind: 'server', message, retryable: true });
     setTurns((current) =>
       current
         // Drop the empty placeholder: an assistant bubble with no text is
@@ -221,7 +263,7 @@ export function useConversation(client: ApiClient) {
         },
       ]);
       setSending(true);
-      setError(null);
+      setFailure(null);
       setAuthRequired(false);
 
       // Try the socket first. It returns false when it could not send, and
@@ -277,7 +319,7 @@ export function useConversation(client: ApiClient) {
           ),
         );
         setAuthRequired(isUnauthenticated(caught));
-        setError(messageFor(caught));
+        setFailure(failureFrom(caught));
       } finally {
         setSending(false);
       }
@@ -290,7 +332,7 @@ export function useConversation(client: ApiClient) {
     writeStoredId(null);
     setConversationId(null);
     setTurns([]);
-    setError(null);
+    setFailure(null);
     setAuthRequired(false);
   }, []);
 
@@ -299,7 +341,9 @@ export function useConversation(client: ApiClient) {
     turns,
     sending,
     loading,
-    error,
+    failure,
+    /** The message alone, for callers that only render text. */
+    error: failure?.message ?? null,
     authRequired,
     start,
     send,

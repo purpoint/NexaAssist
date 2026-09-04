@@ -45,6 +45,18 @@ beforeEach(() => {
   resetTurnIds();
 });
 
+/** A client whose every call rejects with one error. */
+function failingClient(error: unknown) {
+  return {
+    sendMessage: () => Promise.reject(error),
+    startConversation: () => Promise.reject(error),
+    getConversation: () => Promise.reject(error),
+    getHistory: () => Promise.reject(error),
+    mintRealtimeTicket: () => Promise.reject(error),
+    getReadiness: () => Promise.reject(error),
+  } as unknown as ApiClient;
+}
+
 describe('sending', () => {
   it('shows the question before the server has seen it', async () => {
     let release: (value: AssistantMessageResponse) => void = () => {};
@@ -290,5 +302,91 @@ describe('conversations', () => {
     const getHistory = vi.fn();
     renderHook(() => useConversation(stubClient({ getHistory })));
     await waitFor(() => expect(getHistory).not.toHaveBeenCalled());
+  });
+});
+
+describe('what kind of failure it was', () => {
+  it('separates an unreachable server from a refusal', async () => {
+    // Different problems with different fixes: one is the network, one is a
+    // credential, and telling somebody the wrong one wastes their time.
+    const { result } = renderHook(() =>
+      useConversation(failingClient(ApiError.unreachable())),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.kind).toBe('offline');
+    expect(result.current.failure?.retryable).toBe(true);
+  });
+
+  it('marks a refusal as needing authentication', async () => {
+    const { result } = renderHook(() =>
+      useConversation(failingClient(new ApiError('unauthenticated', 'Key required.', 401))),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.kind).toBe('unauthenticated');
+    // Nothing is gained by retrying the same unauthenticated request.
+    expect(result.current.failure?.retryable).toBe(false);
+  });
+
+  it('marks a rate limit as worth retrying', async () => {
+    const { result } = renderHook(() =>
+      useConversation(failingClient(new ApiError('rate_limited', 'Slow down.', 429))),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.kind).toBe('rate_limited');
+    expect(result.current.failure?.retryable).toBe(true);
+  });
+
+  it('marks a server fault as a server fault', async () => {
+    const { result } = renderHook(() =>
+      useConversation(failingClient(new ApiError('unexpected_error', 'Oops.', 500))),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.kind).toBe('server');
+  });
+
+  it('does not offer to retry a request the server rejected', async () => {
+    // A 422 will be rejected identically every time it is sent.
+    const { result } = renderHook(() =>
+      useConversation(failingClient(new ApiError('invalid_request', 'Bad field.', 422))),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.kind).toBe('request');
+    expect(result.current.failure?.retryable).toBe(false);
+  });
+
+  it('keeps the message alongside the category', async () => {
+    const { result } = renderHook(() =>
+      useConversation(failingClient(new ApiError('rate_limited', 'Slow down.', 429))),
+    );
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure?.message).toBe('Slow down.');
+    expect(result.current.error).toBe('Slow down.');
+  });
+
+  it('clears the failure once something succeeds', async () => {
+    const client = stubClient({
+      sendMessage: () => Promise.resolve(reply()),
+    });
+    const { result } = renderHook(() => useConversation(client));
+    act(() => {
+      result.current.failStream('Stream broke.');
+    });
+    expect(result.current.failure).not.toBeNull();
+    await act(async () => {
+      await result.current.send('hello');
+    });
+    expect(result.current.failure).toBeNull();
   });
 });

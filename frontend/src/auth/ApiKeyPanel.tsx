@@ -37,6 +37,18 @@ export function ApiKeyPanel({
     if (required) field.current?.focus();
   }, [required]);
 
+  useEffect(() => {
+    // Escape closes it, which is what every dismissible panel has taught
+    // people to expect -- but not while a request is blocked, where closing
+    // would hide the only thing that can unblock it.
+    if (required) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onDismiss();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [required, onDismiss]);
+
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (!value.trim()) return;
@@ -54,7 +66,7 @@ export function ApiKeyPanel({
       aria-live={required ? 'assertive' : 'off'}
     >
       <h2 className="apikey__heading" id={`${inputId}-heading`}>
-        {required ? 'This deployment needs an API key' : 'API key'}
+        {required ? 'This deployment needs an API key' : 'API access'}
       </h2>
       <p className="apikey__body">
         {required

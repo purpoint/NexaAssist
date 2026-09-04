@@ -4,9 +4,12 @@
  * Deliberately few: a component library is worth having once there is enough
  * UI to be inconsistent about, and inventing one before then is guessing at
  * what the product needs.
+ *
+ * ErrorBanner and EmptyState lived here until the screens that used them
+ * grew their own: failures are now categorised by ErrorNotice, and the empty
+ * conversation is the Welcome screen. Keeping unused exports around is how a
+ * component library ends up with three ways to say the same thing.
  */
-
-import type { ReactNode } from 'react';
 
 import type { RealtimeState } from '../realtime/useRealtime';
 
@@ -16,35 +19,6 @@ export function Spinner({ label = 'Loading' }: { label?: string }) {
       <span className="spinner__dot" aria-hidden="true" />
       <span className="visually-hidden">{label}</span>
     </span>
-  );
-}
-
-export function ErrorBanner({
-  message,
-  onRetry,
-}: {
-  message: string;
-  onRetry?: () => void;
-}) {
-  return (
-    // `alert` so a screen reader announces it without the user hunting for it.
-    <div className="banner banner--error" role="alert">
-      <span>{message}</span>
-      {onRetry ? (
-        <button type="button" className="button button--quiet" onClick={onRetry}>
-          Try again
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-export function EmptyState({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="empty">
-      <p className="empty__title">{title}</p>
-      {children ? <p className="empty__body">{children}</p> : null}
-    </div>
   );
 }
 

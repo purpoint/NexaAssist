@@ -560,6 +560,41 @@
   background: var(--surface-raised);
 }
 
+/* ---------- notices ---------- */
+
+.notice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface-raised);
+}
+
+.notice--error {
+  border-color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.notice__text {
+  min-width: 0;
+}
+
+.notice__title {
+  margin: 0;
+  font-size: var(--text-base);
+  font-weight: 600;
+}
+
+.notice__body {
+  margin: 2px 0 0;
+  font-size: var(--text-base);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+
 /* ---------- api access ---------- */
 
 .apikey {
