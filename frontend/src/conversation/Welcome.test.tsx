@@ -12,10 +12,13 @@ describe('explaining the product', () => {
     expect(screen.getByText('How can we help?')).toBeInTheDocument();
   });
 
-  it('says answers are grounded and cited, which is the differentiator', () => {
+  it('promises the two things that separate this from a chatbot', () => {
+    // Citation and handoff. Both are real capabilities, and the first screen
+    // is where somebody learns the product has them.
     render(<Welcome onPrompt={() => {}} />);
-    expect(screen.getByText(/knowledge base/)).toBeInTheDocument();
-    expect(screen.getByText(/cite the passage/)).toBeInTheDocument();
+    const body = screen.getByText(/Ask about orders/).textContent ?? '';
+    expect(body).toMatch(/cites the passage/);
+    expect(body).toMatch(/goes to a person/);
   });
 });
 

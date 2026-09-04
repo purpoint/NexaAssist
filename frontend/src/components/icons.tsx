@@ -97,6 +97,38 @@ export const CloseIcon = (props: IconProps) =>
 export const ChevronIcon = (props: IconProps) =>
   svg(<path d="M6 3.5L10.5 8 6 12.5" />, props);
 
+export const TruckIcon = (props: IconProps) =>
+  svg(
+    <>
+      <path d="M1.5 4.5h7v6h-7z" />
+      <path d="M8.5 6.5h3l2 2v2h-5z" />
+      <circle cx="4" cy="12" r="1.4" />
+      <circle cx="11" cy="12" r="1.4" />
+    </>,
+    props,
+  );
+
+export const RefundIcon = (props: IconProps) =>
+  svg(
+    <>
+      <path d="M2.5 6.5A5.5 5.5 0 1 1 3 10" />
+      <path d="M1.5 3.5v3h3" />
+    </>,
+    props,
+  );
+
+export const ShieldIcon = (props: IconProps) =>
+  svg(<path d="M8 1.8l5 1.8v4.1c0 2.7-2 5-5 6.5-3-1.5-5-3.8-5-6.5V3.6l5-1.8z" />, props);
+
+export const CardIcon = (props: IconProps) =>
+  svg(
+    <>
+      <rect x="1.5" y="3.5" width="13" height="9" rx="1.6" />
+      <path d="M1.5 6.5h13" />
+    </>,
+    props,
+  );
+
 /**
  * The product mark.
  *

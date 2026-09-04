@@ -11,7 +11,13 @@
  * edit it.
  */
 
-import { BrandMark } from '../components/icons';
+import {
+  BrandMark,
+  CardIcon,
+  RefundIcon,
+  ShieldIcon,
+  TruckIcon,
+} from '../components/icons';
 
 /**
  * Chosen to match the intents the router actually distinguishes, so the
@@ -21,18 +27,22 @@ const PROMPTS = [
   {
     label: 'Shipping & delivery',
     question: 'How long does standard shipping take?',
+    Icon: TruckIcon,
   },
   {
     label: 'Refund policy',
     question: 'What is your refund window?',
+    Icon: RefundIcon,
   },
   {
     label: 'Account help',
     question: 'How do I reset my password?',
+    Icon: ShieldIcon,
   },
   {
     label: 'Payment issue',
     question: 'My payment was declined — what should I do?',
+    Icon: CardIcon,
   },
 ];
 
@@ -44,9 +54,11 @@ export function Welcome({ onPrompt }: { onPrompt: (question: string) => void }) 
       </span>
       <h2 className="welcome__title">How can we help?</h2>
       <p className="welcome__body">
-        Ask about billing, orders, accounts, shipping, or policies. Answers are
-        drawn from your knowledge base and cite the passage they came from.
+        Ask about orders, billing, shipping, accounts, or policies. Every answer
+        cites the passage it came from, and anything the assistant should not
+        settle alone goes to a person.
       </p>
+      <p className="welcome__label">Suggested questions</p>
       <ul className="welcome__prompts">
         {PROMPTS.map((prompt) => (
           <li key={prompt.label}>
@@ -59,6 +71,9 @@ export function Welcome({ onPrompt }: { onPrompt: (question: string) => void }) 
               aria-label={`${prompt.label}: ${prompt.question}`}
               onClick={() => onPrompt(prompt.question)}
             >
+              <span className="prompt__icon" aria-hidden="true">
+                <prompt.Icon size={15} />
+              </span>
               <span className="prompt__label">{prompt.label}</span>
               <span className="prompt__question">{prompt.question}</span>
             </button>

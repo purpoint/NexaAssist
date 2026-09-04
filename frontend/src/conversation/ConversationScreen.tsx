@@ -7,7 +7,7 @@
  * stored id.
  */
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useState } from 'react';
 
 import type { ApiClient } from '../api/client';
 import { ErrorNotice } from '../components/ErrorNotice';
@@ -15,6 +15,7 @@ import { Spinner } from '../components/primitives';
 import { socketUrlWithTicket, WS_URL } from '../config';
 import { useRealtime, type RealtimeState, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
+import { SaveConversation } from './SaveConversation';
 import { MessageList } from './MessageList';
 import { Welcome } from './Welcome';
 import type { useConversation } from './useConversation';
@@ -45,7 +46,6 @@ export function ConversationScreen({
   useEffect(() => {
     onAuthRequired?.(conversation.authRequired);
   }, [conversation.authRequired, onAuthRequired]);
-  const [email, setEmail] = useState('');
   // A suggested prompt fills the composer rather than sending itself, so
   // nobody spends a model call on a click they meant as a look.
   const [draft, setDraft] = useState<{ text: string; token: number }>();
@@ -85,10 +85,8 @@ export function ConversationScreen({
     });
   };
 
-  const startConversation = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!email.trim()) return;
-    const id = await conversation.start(email.trim());
+  const saveConversation = async (customerEmail: string) => {
+    const id = await conversation.start(customerEmail);
     // Indexed only once the server has actually opened it: an entry for a
     // conversation that failed to start would point at nothing.
     if (id) index.remember(id, UNTITLED);
@@ -97,14 +95,18 @@ export function ConversationScreen({
   return (
     <section className="conversation" aria-label="Assistant">
       <header className="conversation__head">
-        <div>
+        <div className="conversation__heading">
           <h1 className="conversation__title">Support assistant</h1>
           <p className="conversation__subtitle">
-            {conversation.conversationId
-              ? 'This exchange is being saved to your conversation.'
-              : 'Ask a question, or start a conversation to keep the history.'}
+            Answers are grounded in your knowledge base and cite their sources.
           </p>
         </div>
+        <SaveConversation
+          saved={conversation.conversationId !== null}
+          busy={conversation.loading}
+          hasMessages={conversation.turns.length > 0}
+          onSave={saveConversation}
+        />
       </header>
 
       {/* The body scrolls; the composer below it does not, so it never
@@ -147,33 +149,6 @@ export function ConversationScreen({
             <MessageList turns={conversation.turns} sending={conversation.sending} />
           )}
 
-          {conversation.conversationId ? null : (
-            <form className="starter" onSubmit={startConversation}>
-              <div className="starter__field">
-                <label className="starter__label" htmlFor="starter-email">
-                  {/* Optional, and said so: the backend answers without a
-                      conversation, and a form that looks required would stop
-                      somebody asking anything at all. */}
-                  Keep this conversation (optional)
-                </label>
-                <input
-                  id="starter-email"
-                  className="field"
-                  type="email"
-                  value={email}
-                  placeholder="you@example.com"
-                  onChange={(event) => setEmail(event.target.value)}
-                />
-              </div>
-              <button
-                type="submit"
-                className="button"
-                disabled={conversation.loading || email.trim().length === 0}
-              >
-                Start conversation
-              </button>
-            </form>
-          )}
         </div>
       </div>
 
