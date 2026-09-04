@@ -112,3 +112,30 @@ describe('once saved', () => {
     expect(screen.queryByRole('button', { name: /Save conversation/ })).not.toBeInTheDocument();
   });
 });
+
+describe('dismissing by pointer', () => {
+  it('closes when the click lands outside it', async () => {
+    // Escape is the keyboard escape hatch; clicking away is what everybody
+    // else reaches for.
+    render(
+      <>
+        <SaveConversation saved={false} busy={false} hasMessages={false} onSave={() => {}} />
+        <button type="button">elsewhere</button>
+      </>,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Save conversation/ }));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'elsewhere' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('stays open when the click lands inside it', async () => {
+    render(
+      <SaveConversation saved={false} busy={false} hasMessages={false} onSave={() => {}} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /Save conversation/ }));
+    await userEvent.click(screen.getByLabelText('Customer email'));
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+});

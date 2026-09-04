@@ -37,6 +37,7 @@ export function SaveConversation({
   const [email, setEmail] = useState('');
   const fieldId = useId();
   const field = useRef<HTMLInputElement | null>(null);
+  const container = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (open) field.current?.focus();
@@ -47,8 +48,18 @@ export function SaveConversation({
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false);
     };
+    // Clicking away closes it, which is what a popover has taught people to
+    // expect. Escape alone is not enough: it is the escape hatch for people
+    // on a keyboard, not the one everybody else reaches for.
+    const onPointerDown = (event: MouseEvent) => {
+      if (!container.current?.contains(event.target as Node)) setOpen(false);
+    };
     window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('mousedown', onPointerDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('mousedown', onPointerDown);
+    };
   }, [open]);
 
   if (saved) {
@@ -70,7 +81,7 @@ export function SaveConversation({
   };
 
   return (
-    <div className="save">
+    <div className="save" ref={container}>
       <button
         type="button"
         className="button button--quiet button--small"

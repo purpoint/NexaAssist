@@ -22,7 +22,10 @@
 
   --text: #e9ebef;
   --text-secondary: #a2a9b6;
-  --text-muted: #6d7480;
+  /* Lightened from #6d7480, which measured 3.98:1 against these surfaces
+     and so failed AA everywhere it was used -- and it is used only on
+     small text, where the 4.5:1 threshold applies. */
+  --text-muted: #7d8592;
 
   /* One accent. A second would compete with the status colours, which have
      to mean something. */
@@ -91,7 +94,9 @@
 
     --text: #14171c;
     --text-secondary: #4d5561;
-    --text-muted: #79818d;
+    /* Darkened from #79818d for the same reason its dark counterpart was
+       lightened: it measured under 4:1 on both light surfaces. */
+    --text-muted: #626973;
 
     --accent: #2f6fe4;
     --accent-hover: #2a63cc;

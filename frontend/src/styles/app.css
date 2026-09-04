@@ -746,8 +746,23 @@
     align-items: stretch;
   }
 
+  /* The subtitle wraps to two lines on a phone and pushes the save control
+     onto a third, spending an eighth of the screen before the conversation
+     starts. The welcome body already says what the assistant does, so the
+     subtitle is the line that goes. */
   .conversation__head {
-    flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .conversation__subtitle {
+    display: none;
+  }
+
+  /* Stays anchored to the control's right edge, which is already inside the
+     header's padding. Centring it on the button instead pushed it off the
+     screen, because the button sits near the right edge. */
+  .save__panel {
+    width: min(320px, calc(100vw - var(--space-6)));
   }
 }
