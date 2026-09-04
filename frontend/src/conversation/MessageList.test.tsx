@@ -76,7 +76,7 @@ describe('rendering', () => {
     const { rerender } = render(
       <MessageList turns={[turn()]} sending={false} />,
     );
-    expect(screen.queryByText(/source/)).toBeNull();
+    expect(screen.queryByText(/Sources/)).toBeNull();
 
     rerender(
       <MessageList
@@ -96,7 +96,11 @@ describe('rendering', () => {
         sending={false}
       />,
     );
-    expect(screen.getByText('1 source')).toBeInTheDocument();
+    // The card is headed "Sources" with the count beside it; what this
+    // pins is that provenance is offered at all, not its wording.
+    const summary = screen.getByText(/Sources/);
+    expect(summary).toBeInTheDocument();
+    expect(summary.textContent).toContain('1');
   });
 
   it('marks an undelivered question', () => {
@@ -110,15 +114,42 @@ describe('rendering', () => {
   });
 
   it('announces that a reply is on its way', () => {
+    // A named wait, announced as a status: "generating" and "reconnecting"
+    // are different waits and a bare spinner cannot tell them apart.
     render(<MessageList turns={[]} sending />);
-    expect(screen.getByRole('status')).toHaveTextContent('The assistant is replying');
+    expect(screen.getByRole('status')).toHaveTextContent('Generating response');
+  });
+
+  it('does not announce a wait while an answer is already streaming', () => {
+    // The streamed text is the progress indicator at that point; showing
+    // both would claim two answers are coming.
+    render(
+      <MessageList
+        turns={[turn({ role: 'assistant', streaming: true, text: 'partial' })]}
+        sending
+      />,
+    );
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
   });
 
   it('says when a person has been brought in', () => {
     render(<MessageList turns={[turn({ escalated: true })]} sending={false} />);
-    expect(
-      screen.getByText('A support agent has been asked to look.'),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('note')).toHaveTextContent('Human support requested');
+  });
+
+  it('says a person was asked, never that one has answered', () => {
+    // The backend files a review item and says nothing about anybody picking
+    // it up. Implying otherwise is the one lie a support product cannot
+    // afford.
+    render(<MessageList turns={[turn({ escalated: true })]} sending={false} />);
+    const notice = screen.getByRole('note').textContent ?? '';
+    expect(notice).toMatch(/handed to a support agent/i);
+    expect(notice).not.toMatch(/has (replied|responded|answered)/i);
+  });
+
+  it('shows no handoff notice on an ordinary answer', () => {
+    render(<MessageList turns={[turn()]} sending={false} />);
+    expect(screen.queryByRole('note')).not.toBeInTheDocument();
   });
 });
 

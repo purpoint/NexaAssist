@@ -10,11 +10,12 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
 import type { ApiClient } from '../api/client';
-import { EmptyState, ErrorBanner, Spinner } from '../components/primitives';
+import { ErrorBanner, Spinner } from '../components/primitives';
 import { socketUrlWithTicket, WS_URL } from '../config';
 import { useRealtime, type RealtimeState, type SocketFactory } from '../realtime/useRealtime';
 import { Composer } from './Composer';
 import { MessageList } from './MessageList';
+import { Welcome } from './Welcome';
 import type { useConversation } from './useConversation';
 import { UNTITLED, type useConversationIndex } from './useConversationIndex';
 
@@ -44,6 +45,9 @@ export function ConversationScreen({
     onAuthRequired?.(conversation.authRequired);
   }, [conversation.authRequired, onAuthRequired]);
   const [email, setEmail] = useState('');
+  // A suggested prompt fills the composer rather than sending itself, so
+  // nobody spends a model call on a click they meant as a look.
+  const [draft, setDraft] = useState<{ text: string; token: number }>();
 
   const realtime = useRealtime(
     WS_URL,
@@ -106,11 +110,39 @@ export function ConversationScreen({
           scrolls away from somebody mid-conversation. */}
       <div className="conversation__body">
         <div className="conversation__inner">
+          {/* The key panel already explains a 401 and offers the fix; a banner
+              beside it would say the same thing twice. */}
+          {conversation.error && !conversation.authRequired ? (
+            <ErrorBanner message={conversation.error} />
+          ) : null}
+
+          {conversation.loading && conversation.turns.length === 0 ? (
+            <div className="conversation__loading">
+              <Spinner label="Loading your conversation" />
+            </div>
+          ) : null}
+
+          {conversation.turns.length === 0 && !conversation.loading ? (
+            <Welcome
+              onPrompt={(question) =>
+                setDraft((current) => ({
+                  text: question,
+                  token: (current?.token ?? 0) + 1,
+                }))
+              }
+            />
+          ) : (
+            <MessageList turns={conversation.turns} sending={conversation.sending} />
+          )}
+
           {conversation.conversationId ? null : (
             <form className="starter" onSubmit={startConversation}>
               <div className="starter__field">
                 <label className="starter__label" htmlFor="starter-email">
-                  Email
+                  {/* Optional, and said so: the backend answers without a
+                      conversation, and a form that looks required would stop
+                      somebody asking anything at all. */}
+                  Keep this conversation (optional)
                 </label>
                 <input
                   id="starter-email"
@@ -130,30 +162,10 @@ export function ConversationScreen({
               </button>
             </form>
           )}
-
-          {/* The key panel already explains a 401 and offers the fix; a banner
-              beside it would say the same thing twice. */}
-          {conversation.error && !conversation.authRequired ? (
-            <ErrorBanner message={conversation.error} />
-          ) : null}
-
-          {conversation.loading && conversation.turns.length === 0 ? (
-            <div className="conversation__loading">
-              <Spinner label="Loading your conversation" />
-            </div>
-          ) : null}
-
-          {conversation.turns.length === 0 && !conversation.loading ? (
-            <EmptyState title="No messages yet">
-              Ask anything about your account, a charge, or how something works.
-            </EmptyState>
-          ) : (
-            <MessageList turns={conversation.turns} sending={conversation.sending} />
-          )}
         </div>
       </div>
 
-      <Composer disabled={conversation.sending} onSend={handleSend} />
+      <Composer disabled={conversation.sending} onSend={handleSend} draft={draft} />
     </section>
   );
 }
