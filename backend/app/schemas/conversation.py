@@ -6,6 +6,7 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 from app.models.conversation import MessageRole
+from app.schemas.document import Citation
 
 
 class ConversationStartRequest(BaseModel):
@@ -39,6 +40,15 @@ class ConversationMessageResponse(BaseModel):
     role: MessageRole
     content: str
     created_at: datetime
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description=(
+            "Sources behind this turn, as they were when it was sent. Empty "
+            "for customer turns, for answers that cited nothing, and for "
+            "replies policy rewrote. Recorded rather than resolved, so an "
+            "edited document does not change what an old answer claims."
+        ),
+    )
 
 
 class ConversationHistoryResponse(BaseModel):

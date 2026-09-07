@@ -91,6 +91,13 @@ export interface ConversationMessage {
   role: MessageRole;
   content: string;
   created_at: string;
+  /**
+   * Sources behind this turn, as they were when it was sent.
+   *
+   * Optional because a server from before conversations recorded them does
+   * not send it, and absent must mean "none recorded" rather than crash.
+   */
+  citations?: Citation[];
 }
 
 export interface ConversationHistory {

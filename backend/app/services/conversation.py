@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.authorization import OwnerScope
 from app.core.logging import get_logger
 from app.models import Conversation, ConversationMessage, MessageRole
+from app.schemas.document import Citation
 from app.services.errors import ConversationNotFoundError
 
 logger = get_logger(__name__)
@@ -86,6 +87,7 @@ class ConversationService:
         *,
         role: MessageRole,
         content: str,
+        citations: Sequence[Citation] | None = None,
         scope: OwnerScope | None = None,
     ) -> ConversationMessage:
         """Add a turn at the next position.
@@ -105,6 +107,11 @@ class ConversationService:
             role=role,
             content=content,
             token_estimate=estimate_tokens(content),
+            # Stored as sent. A citation is a claim about one answer at one
+            # moment, so it is written down beside that answer rather than
+            # resolved from the documents later, which would show whatever
+            # they say now.
+            citations=[c.model_dump(mode="json") for c in (citations or ())],
         )
         self._session.add(message)
         await self._session.flush()
@@ -112,11 +119,13 @@ class ConversationService:
 
         # Position and size only; the content is customer material.
         logger.info(
-            "conversation appended conversation_id=%s position=%d role=%s tokens=%d",
+            "conversation appended conversation_id=%s position=%d role=%s "
+            "tokens=%d citations=%d",
             conversation_id,
             message.position,
             role.value,
             message.token_estimate,
+            len(message.citations),
         )
         return message
 

@@ -13,7 +13,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base, TimestampMixin, UUIDPrimaryKeyMixin
@@ -97,6 +99,26 @@ class ConversationMessage(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # Stored rather than recomputed: trimming a window should not require
     # re-tokenising the whole history on every turn.
     token_estimate: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    # The sources behind this turn, as they were when it was sent.
+    #
+    # A snapshot, not a set of foreign keys into document chunks, and that is
+    # the whole design decision here. A citation is a claim about what an
+    # answer was based on at the moment it was given; if the document is
+    # edited afterwards, resolving the reference would show text the customer
+    # was never shown and attribute it to an answer that predates it. Provenance
+    # that changes under you is not provenance.
+    #
+    # The cost is duplication and no referential integrity -- a cited document
+    # can be deleted and this row will still describe it. That is the correct
+    # trade: the record of what was said should survive the source it came from.
+    #
+    # Empty for every customer turn, for assistant turns that cited nothing,
+    # and for replies policy rewrote -- the pipeline already drops citations
+    # there rather than attributing text it did not produce.
+    citations: Mapped[list[dict]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'[]'::jsonb")
+    )
 
     conversation: Mapped[Conversation] = relationship(
         back_populates="messages", lazy="raise"

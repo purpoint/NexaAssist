@@ -390,3 +390,104 @@ describe('what kind of failure it was', () => {
     expect(result.current.failure).toBeNull();
   });
 });
+
+describe('sources on a reopened conversation', () => {
+  const cited = {
+    document_id: 'doc-1',
+    document_title: 'Shipping and delivery',
+    ordinal: 0,
+    excerpt: 'Standard shipping takes 3 to 5 business days.',
+    similarity: 0.86,
+  };
+
+  function history(messages: unknown[]) {
+    return stubClient({
+      getHistory: () => Promise.resolve({ conversation_id: 'c1', messages }),
+    });
+  }
+
+  it('restores the sources an answer was given with', async () => {
+    // The reason this exists: provenance used to live only in the live
+    // response, so an answer cited a document while you watched it and cited
+    // nothing after a reload.
+    window.localStorage.setItem(CONVERSATION_STORAGE_KEY, 'c1');
+    const { result } = renderHook(() =>
+      useConversation(
+        history([
+          { position: 0, role: 'customer', content: 'How long?', created_at: 'now' },
+          {
+            position: 1,
+            role: 'assistant',
+            content: 'Three to five days.',
+            created_at: 'now',
+            citations: [cited],
+          },
+        ]),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.turns).toHaveLength(2));
+    expect(result.current.turns[1].citations).toHaveLength(1);
+    expect(result.current.turns[1].citations[0].document_title).toBe(
+      'Shipping and delivery',
+    );
+  });
+
+  it('leaves a customer turn without sources', async () => {
+    window.localStorage.setItem(CONVERSATION_STORAGE_KEY, 'c1');
+    const { result } = renderHook(() =>
+      useConversation(
+        history([
+          { position: 0, role: 'customer', content: 'How long?', created_at: 'now' },
+        ]),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.turns).toHaveLength(1));
+    expect(result.current.turns[0].citations).toEqual([]);
+  });
+
+  it('survives a server that does not send the field', async () => {
+    // An older backend, or a turn recorded before the column existed. Absent
+    // must mean "none recorded", never a crash.
+    window.localStorage.setItem(CONVERSATION_STORAGE_KEY, 'c1');
+    const { result } = renderHook(() =>
+      useConversation(
+        history([
+          {
+            position: 0,
+            role: 'assistant',
+            content: 'Three to five days.',
+            created_at: 'now',
+          },
+        ]),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.turns).toHaveLength(1));
+    expect(result.current.turns[0].citations).toEqual([]);
+  });
+
+  it('does not warn that a restored answer was unsourced', async () => {
+    // The warning is for the prose fallback the socket uses with no
+    // knowledge base. A turn read back from history is not that, and marking
+    // every restored answer "unsourced" would train people to ignore it.
+    window.localStorage.setItem(CONVERSATION_STORAGE_KEY, 'c1');
+    const { result } = renderHook(() =>
+      useConversation(
+        history([
+          {
+            position: 0,
+            role: 'assistant',
+            content: 'Three to five days.',
+            created_at: 'now',
+            citations: [cited],
+          },
+        ]),
+      ),
+    );
+
+    await waitFor(() => expect(result.current.turns).toHaveLength(1));
+    expect(result.current.turns[0].grounded).toBe(true);
+  });
+});

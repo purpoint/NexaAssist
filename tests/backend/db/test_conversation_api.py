@@ -1,12 +1,18 @@
 """Conversation endpoints and assistant continuity, against a real database."""
 
 import uuid
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
+from sqlalchemy.pool import NullPool
 
 from app.agent.loop import AgentDecision
 from app.core.config import Settings
@@ -14,9 +20,12 @@ from app.llm.base import LLMConfig
 from app.llm.providers.static_provider import StaticLLMProvider
 from app.main import create_app
 from app.models import Customer
+from app.models.conversation import MessageRole
 from app.rag.embeddings import HashingEmbeddingProvider
+from app.schemas.document import Citation
 from app.schemas.intent import IntentAnalysis, IntentCategory
 from app.services.answer import GroundedModelAnswer
+from app.services.conversation import ConversationService
 
 from .conftest import TEST_DATABASE_URL
 
@@ -30,6 +39,21 @@ EMAIL = "person@example.com"
 ANALYSIS = IntentAnalysis(
     intent=IntentCategory.BILLING, confidence=0.95, reason="fixture"
 )
+
+
+@pytest.fixture
+async def session(test_database_url: str) -> AsyncIterator[AsyncSession]:
+    """A session for the tests that exercise the service directly.
+
+    The endpoint tests below drive everything through the client; these few
+    need to write a turn with sources attached, which no endpoint does on its
+    own -- the assistant does it as part of answering.
+    """
+    engine = create_async_engine(test_database_url, poolclass=NullPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as opened:
+        yield opened
+    await engine.dispose()
 
 
 @pytest.fixture
@@ -219,3 +243,120 @@ def test_two_conversations_do_not_mix(client: TestClient) -> None:
 
     other = client.get(f"{CONVERSATIONS}/{second['id']}/messages").json()
     assert other["messages"] == []
+
+
+async def a_customer(session: AsyncSession) -> uuid.UUID:
+    """A customer row to hang a conversation from, as the endpoint would."""
+    customer = Customer(email=f"person-{uuid.uuid4().hex[:8]}@example.com")
+    session.add(customer)
+    await session.flush()
+    await session.commit()
+    return customer.id
+
+
+# --------------------------------------------------------------------------
+# Sources survive the reload
+#
+# Provenance used to live only in the live response: an answer cited a
+# document while you watched it and cited nothing once the page was
+# reloaded. The same answer making two different claims is worse than
+# making none.
+
+
+@pytest.mark.anyio
+async def test_an_answers_sources_are_recorded_with_it(session: AsyncSession) -> None:
+    conversation = await ConversationService(session).start(await a_customer(session))
+    cited = Citation(
+        document_id=uuid.uuid4(),
+        document_title="Shipping and delivery",
+        ordinal=0,
+        excerpt="Standard shipping takes 3 to 5 business days.",
+        similarity=0.86,
+    )
+
+    await ConversationService(session).append(
+        conversation.id,
+        role=MessageRole.ASSISTANT,
+        content="Three to five business days.",
+        citations=[cited],
+    )
+
+    history = await ConversationService(session).history(conversation.id)
+    stored = history[-1].citations
+    assert len(stored) == 1
+    assert stored[0]["document_title"] == "Shipping and delivery"
+    assert stored[0]["similarity"] == 0.86
+
+
+@pytest.mark.anyio
+async def test_a_turn_with_no_sources_records_none(session: AsyncSession) -> None:
+    """Empty, never null: a caller reads a list either way."""
+    conversation = await ConversationService(session).start(await a_customer(session))
+
+    await ConversationService(session).append(
+        conversation.id, role=MessageRole.CUSTOMER, content="How long is shipping?"
+    )
+
+    history = await ConversationService(session).history(conversation.id)
+    assert history[-1].citations == []
+
+
+@pytest.mark.anyio
+async def test_recorded_sources_do_not_follow_the_document(
+    session: AsyncSession,
+) -> None:
+    """A snapshot, which is the reason for storing them rather than resolving.
+
+    The excerpt describes what an answer was based on at the time. Editing
+    the document afterwards must not rewrite what an old answer claims.
+    """
+    conversation = await ConversationService(session).start(await a_customer(session))
+    document_id = uuid.uuid4()
+    await ConversationService(session).append(
+        conversation.id,
+        role=MessageRole.ASSISTANT,
+        content="Three to five business days.",
+        citations=[
+            Citation(
+                document_id=document_id,
+                document_title="Shipping",
+                ordinal=0,
+                excerpt="Three to five business days.",
+                similarity=0.9,
+            )
+        ],
+    )
+
+    history = await ConversationService(session).history(conversation.id)
+    # The row holds the text, not a pointer to whatever the document says now.
+    assert history[-1].citations[0]["excerpt"] == "Three to five business days."
+    assert history[-1].citations[0]["document_id"] == str(document_id)
+
+
+@pytest.mark.anyio
+async def test_the_history_endpoint_returns_the_sources(
+    client: TestClient, session: AsyncSession
+) -> None:
+    conversation = await ConversationService(session).start(await a_customer(session))
+    await ConversationService(session).append(
+        conversation.id,
+        role=MessageRole.ASSISTANT,
+        content="Three to five business days.",
+        citations=[
+            Citation(
+                document_id=uuid.uuid4(),
+                document_title="Shipping",
+                ordinal=1,
+                excerpt="Three to five.",
+                similarity=0.8,
+            )
+        ],
+    )
+
+    body = client.get(f"/api/v1/conversations/{conversation.id}/messages").json()
+
+    assistant = [m for m in body["messages"] if m["role"] == "assistant"][-1]
+    assert assistant["citations"][0]["document_title"] == "Shipping"
+    assert assistant["citations"][0]["ordinal"] == 1
+    customer_turns = [m for m in body["messages"] if m["role"] == "customer"]
+    assert all(m["citations"] == [] for m in customer_turns)

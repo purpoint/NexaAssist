@@ -20,6 +20,7 @@ composes and returns a value.
 """
 
 import uuid
+from collections.abc import Sequence
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -114,8 +115,16 @@ class AssistantService:
         )
 
         if conversation_id is not None:
+            # The sources are recorded with the turn, so reopening the
+            # conversation shows what the answer was based on. Escalation only
+            # appends a notice and leaves the answered text intact, so these
+            # still describe what was sent.
             await self._record(
-                conversation_id, MessageRole.ASSISTANT, handoff.reply, scope
+                conversation_id,
+                MessageRole.ASSISTANT,
+                handoff.reply,
+                scope,
+                citations=routed.citations,
             )
 
         return AssistantReply(
@@ -143,6 +152,7 @@ class AssistantService:
         role: MessageRole,
         content: str,
         scope: OwnerScope | None = None,
+        citations: Sequence[Citation] = (),
     ) -> None:
         """Append one turn.
 
@@ -151,5 +161,5 @@ class AssistantService:
         """
         assert self._conversations is not None
         await self._conversations.append(
-            conversation_id, role=role, content=content, scope=scope
+            conversation_id, role=role, content=content, citations=citations, scope=scope
         )

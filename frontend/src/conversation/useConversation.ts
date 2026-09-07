@@ -46,7 +46,16 @@ function toTurn(message: ConversationMessage): Turn {
     role: message.role,
     text: message.content,
     status: 'sent',
-    citations: [],
+    // Recorded with the turn, so a reopened conversation shows what its
+    // answers were based on. This was an empty list until the server had
+    // somewhere to keep them, which made provenance disappear on reload --
+    // the same answer citing a document while you watched it and citing
+    // nothing afterwards.
+    citations: message.citations ?? [],
+    // A restored turn is not being streamed now, and was not necessarily
+    // streamed then; what matters is that it is not an unsourced fallback,
+    // which is what the warning is for.
+    grounded: true,
   };
 }
 
