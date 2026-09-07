@@ -21,6 +21,8 @@ from app.llm.streaming import StaticStreamingProvider
 from app.schemas.intent import IntentAnalysis, IntentCategory
 from app.services.answer import GroundedModelAnswer
 from app.main import create_app
+from app.rag.embeddings import HashingEmbeddingProvider
+from app.rag.factory import get_embedding_provider
 from app.realtime.conversations import SessionTurnRecorder, TurnRecorder
 from app.services.errors import ConversationNotFoundError
 
@@ -53,6 +55,13 @@ def client() -> Iterator[TestClient]:
     session_module.get_sessionmaker.cache_clear()
 
     app = create_app(settings)
+    # Deterministic and offline, like every other database test. Without it
+    # the configured provider is fastembed, which downloads its model from
+    # huggingface.co the first time it runs -- so this passed on a laptop with
+    # a warm cache and failed on a clean runner. It only started reaching
+    # retrieval at all when billing began asking the documents first; the gap
+    # was here before that, waiting for a routing change to expose it.
+    app.dependency_overrides[get_embedding_provider] = HashingEmbeddingProvider
     app.dependency_overrides[get_streaming_provider] = lambda: StaticStreamingProvider(
         ANSWER
     )
