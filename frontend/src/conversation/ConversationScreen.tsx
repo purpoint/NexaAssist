@@ -29,6 +29,7 @@ export function ConversationScreen({
   onAuthRequired,
   onRealtimeState,
   authenticated = false,
+  authEnforced = null,
 }: {
   client: ApiClient;
   /** Owned by the root, because the sidebar switches between conversations. */
@@ -42,6 +43,16 @@ export function ConversationScreen({
   onRealtimeState?: (state: RealtimeState) => void;
   /** True when a key is configured, so the socket needs a ticket. */
   authenticated?: boolean;
+  /**
+   * Whether the server demands a credential, or null before it has said.
+   *
+   * Streaming is only attempted when the handshake can actually succeed: an
+   * open deployment, or a protected one with a key to mint a ticket from.
+   * Opening a socket a protected server will refuse is how a keyless visitor
+   * ended up waiting ninety seconds for "the connection dropped" instead of
+   * being told, immediately, that this deployment needs a key.
+   */
+  authEnforced?: boolean | null;
 }) {
   useEffect(() => {
     onAuthRequired?.(conversation.authRequired);
@@ -49,6 +60,11 @@ export function ConversationScreen({
   // A suggested prompt fills the composer rather than sending itself, so
   // nobody spends a model call on a click they meant as a look.
   const [draft, setDraft] = useState<{ text: string; token: number }>();
+
+  // Held off until readiness has answered. Attempting a socket before the
+  // server has said whether it protects anything is the same guess that
+  // caused the problem, made earlier.
+  const canStream = authEnforced === null ? false : !authEnforced || authenticated;
 
   const realtime = useRealtime(
     WS_URL,
@@ -58,6 +74,7 @@ export function ConversationScreen({
       onError: (_code, message) => conversation.failStream(message),
     },
     {
+      enabled: canStream,
       socketFactory,
       // Only when a key is configured. An open deployment needs no ticket,
       // and asking for one would fail and disable streaming for no reason.
