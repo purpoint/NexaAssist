@@ -44,6 +44,16 @@ export interface StreamResult {
 
 export type RealtimeState = 'connecting' | 'open' | 'reconnecting' | 'unavailable';
 
+/**
+ * How long a streamed question may go unanswered before the caller is told.
+ *
+ * Generous, because the answer is not streamed as it is generated: the whole
+ * pipeline -- classify, retrieve, answer, apply policy -- runs before the
+ * first delta, and on a small instance that is tens of seconds. Short enough
+ * that a question which will never be answered does not hang forever.
+ */
+const ANSWER_TIMEOUT_MS = 90_000;
+
 const MAX_ATTEMPTS = 5;
 const BASE_DELAY_MS = 500;
 const MAX_DELAY_MS = 8_000;
@@ -75,6 +85,7 @@ export function useRealtime(
   const { enabled = true, socketFactory, getTicket, urlWithTicket } = options;
 
   const [state, setState] = useState<RealtimeState>('connecting');
+  const answerTimer = useRef<number | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const attemptsRef = useRef(0);
   const timerRef = useRef<number | null>(null);
@@ -173,7 +184,19 @@ export function useRealtime(
 
     socket.onclose = () => {
       socketRef.current = null;
-      awaitingRef.current = false;
+      // A question in flight when the socket dies has to be reported. It used
+      // to be dropped silently: the placeholder bubble stayed empty, `sending`
+      // stayed true, and nothing ever resolved it. That is exactly what a
+      // deployment requiring a ticket the client never minted looked like --
+      // the server closed the socket and the page waited forever.
+      const wasAwaiting = awaitingRef.current;
+      settle();
+      if (wasAwaiting) {
+        handlersRef.current.onError(
+          'realtime_disconnected',
+          'The connection dropped before the answer arrived. Please try again.',
+        );
+      }
       if (closedByUs.current) return;
 
       attemptsRef.current += 1;
@@ -211,6 +234,15 @@ export function useRealtime(
     };
   }, [connect, enabled]);
 
+  /** Stop waiting for an answer, whatever the reason. */
+  const settle = useCallback(() => {
+    awaitingRef.current = false;
+    if (answerTimer.current !== null) {
+      window.clearTimeout(answerTimer.current);
+      answerTimer.current = null;
+    }
+  }, []);
+
   const send = useCallback((frame: ClientFrame): boolean => {
     const socket = socketRef.current;
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
@@ -227,10 +259,23 @@ export function useRealtime(
         question,
         conversation_id: conversationId,
       });
-      if (sent) awaitingRef.current = true;
+      if (sent) {
+        awaitingRef.current = true;
+        // A frame can be accepted by a socket the server has already closed,
+        // and then no reply ever comes. Without this the question hangs for as
+        // long as the page stays open.
+        answerTimer.current = window.setTimeout(() => {
+          if (!awaitingRef.current) return;
+          settle();
+          handlersRef.current.onError(
+            'realtime_timeout',
+            'The assistant did not answer in time. Please try again.',
+          );
+        }, ANSWER_TIMEOUT_MS);
+      }
       return sent;
     },
-    [send],
+    [send, settle],
   );
 
   return {

@@ -334,3 +334,91 @@ describe('tickets', () => {
     expect(view.result.current.state).not.toBe('unavailable');
   });
 });
+
+describe('a question that never gets an answer', () => {
+  it('reports a stream the socket died under', async () => {
+    // The production bug this exists for: a deployment that requires a ticket
+    // the client never minted accepts the frame, closes the socket, and the
+    // page waited forever -- empty bubble, no error, no fallback.
+    const onError = vi.fn();
+    const socket = new FakeSocket(URL);
+    const { result } = renderHook(() =>
+      useRealtime(URL, { ...handlers(), onError }, { socketFactory: () => socket as never }),
+    );
+
+    act(() => socket.open());
+    act(() => {
+      result.current.ask('why?', null);
+    });
+    act(() => socket.drop());
+
+    expect(onError).toHaveBeenCalledWith(
+      'realtime_disconnected',
+      expect.stringContaining('dropped'),
+    );
+  });
+
+  it('says nothing when the socket closes with no question open', () => {
+    // An idle reconnect is not a failed answer.
+    const onError = vi.fn();
+    const socket = new FakeSocket(URL);
+    renderHook(() =>
+      useRealtime(URL, { ...handlers(), onError }, { socketFactory: () => socket as never }),
+    );
+
+    act(() => socket.open());
+    act(() => socket.drop());
+
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('gives up on a silent socket rather than waiting forever', () => {
+    // The frame was accepted but nothing ever came back.
+    vi.useFakeTimers();
+    try {
+      const onError = vi.fn();
+      const socket = new FakeSocket(URL);
+      const { result } = renderHook(() =>
+        useRealtime(URL, { ...handlers(), onError }, { socketFactory: () => socket as never }),
+      );
+
+      act(() => socket.open());
+      act(() => {
+        result.current.ask('why?', null);
+      });
+      expect(onError).not.toHaveBeenCalled();
+
+      act(() => vi.advanceTimersByTime(90_000));
+      expect(onError).toHaveBeenCalledWith(
+        'realtime_timeout',
+        expect.stringContaining('did not answer'),
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not fire the timeout once an answer has arrived', () => {
+    vi.useFakeTimers();
+    try {
+      const onError = vi.fn();
+      const socket = new FakeSocket(URL);
+      const { result } = renderHook(() =>
+        useRealtime(URL, { ...handlers(), onError }, { socketFactory: () => socket as never }),
+      );
+
+      act(() => socket.open());
+      act(() => {
+        result.current.ask('why?', null);
+      });
+      act(() =>
+        socket.receive({ type: 'complete', text: 'done', deltas: 1, conversation_id: null }),
+      );
+      act(() => vi.advanceTimersByTime(90_000));
+
+      expect(onError).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -7,7 +7,6 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IndexedConversation } from '../conversation/useConversationIndex';
 import { Sidebar } from './Sidebar';
 
-const HOUR = 3_600_000;
 const DAY = 86_400_000;
 
 function entry(overrides: Partial<IndexedConversation> = {}): IndexedConversation {
@@ -108,7 +107,11 @@ describe('time labels', () => {
   });
 
   it('keeps yesterday separate from today', () => {
-    render(list([entry({ startedAt: Date.now() - DAY - HOUR })]));
+    // Anchored to yesterday's midday rather than "now minus 25 hours". The
+    // latter only lands in yesterday when the clock reads later than 01:00 --
+    // run it at 00:49 and 25 hours ago is two days back, in another bucket.
+    const yesterdayNoon = new Date(Date.now() - DAY).setHours(12, 0, 0, 0);
+    render(list([entry({ startedAt: yesterdayNoon })]));
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
   });
 });
