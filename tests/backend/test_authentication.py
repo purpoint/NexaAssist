@@ -2,11 +2,14 @@
 
 import logging
 
+import uuid
+
 import pytest
 from fastapi.testclient import TestClient
 
 from app.api.v1.assistant import get_assistant_service
 from app.api.v1.conversations import get_conversation_service, get_customer_service
+from app.api.v1.documents import get_answer_service, get_document_service
 from app.api.v1.identity import API_KEY_HEADER, require_identity
 from app.auth.base import Authenticator
 from app.auth.errors import (
@@ -360,3 +363,85 @@ async def test_the_dependency_propagates_the_identity() -> None:
 async def test_the_dependency_yields_anonymous_when_auth_is_off() -> None:
     identity = await require_identity(None, AnonymousAuthenticator())
     assert identity.authenticated is False
+
+
+# --------------------------------------------------------------------------
+# The knowledge base is not an open door
+#
+# These endpoints were written for an operator surface reachable only from
+# inside a deployment. That assumption held until the service went on a public
+# URL: /documents/answer spends money on a model call, and POST /documents
+# writes material the assistant will cite as authoritative.
+
+
+DOCUMENT = {"title": "Shipping", "content": "Standard shipping takes 3 to 5 days."}
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    (
+        ("post", "/api/v1/documents", DOCUMENT),
+        ("post", "/api/v1/documents/answer", {"question": "How long?"}),
+        ("get", "/api/v1/documents", None),
+        ("get", f"/api/v1/documents/{uuid.uuid4()}", None),
+    ),
+)
+def test_a_protected_deployment_refuses_the_knowledge_base_without_a_key(
+    method: str, path: str, body: dict | None
+) -> None:
+    """Every document route, not just the one that costs money.
+
+    Listing and reading are included because a knowledge base is the material
+    a company chose to answer from, and that is not public by default either.
+
+    The document services are stubbed for the same reason the assistant is in
+    ``protected_client``: FastAPI resolves every dependency before calling the
+    handler, so without stubs the missing database -- or the embedder reaching
+    for its model -- fails first and the refusal never happens. The test would
+    then report a 500 and say nothing at all about authentication.
+    """
+    with protected_client() as client:
+        client.app.dependency_overrides[get_document_service] = lambda: object()
+        client.app.dependency_overrides[get_answer_service] = lambda: object()
+        response = (
+            getattr(client, method)(path, json=body)
+            if body
+            else getattr(client, method)(path)
+        )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "authentication_required"
+
+
+class StubDocuments:
+    """Enough of DocumentService to answer a listing. Returns nothing, which
+    is a real answer -- the point is that the request is served at all."""
+
+    async def list(self, *, limit: int, offset: int) -> list:
+        return []
+
+
+def test_an_open_deployment_still_serves_the_knowledge_base() -> None:
+    """The dependency resolves to an anonymous identity when nothing is
+    configured, so a deployment that does not authenticate is unchanged.
+
+    This is the regression that matters most: protecting these routes must not
+    break every existing deployment that runs without authentication.
+    """
+    with protected_client(entries=None) as client:
+        client.app.dependency_overrides[get_document_service] = StubDocuments
+        response = client.get("/api/v1/documents")
+
+    assert response.status_code == 200
+
+
+def test_the_knowledge_base_advertises_that_it_can_refuse() -> None:
+    """A client cannot handle a 401 it was never told about."""
+    schema = create_app().openapi()
+    for path, method in (
+        ("/api/v1/documents", "post"),
+        ("/api/v1/documents", "get"),
+        ("/api/v1/documents/answer", "post"),
+        ("/api/v1/documents/{document_id}", "get"),
+    ):
+        assert "401" in schema["paths"][path][method]["responses"], f"{method} {path}"
