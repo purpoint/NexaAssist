@@ -23,6 +23,8 @@ export function useReadiness(client: ApiClient, intervalMs = 30_000) {
   // and "this deployment is open" lead to different decisions, and defaulting
   // to the second would have the client open a socket it may not be allowed.
   const [authEnforced, setAuthEnforced] = useState<boolean | null>(null);
+  // Whether a citation's similarity is worth putting in front of a reader.
+  const [scoresAreMeaningful, setScoresAreMeaningful] = useState(false);
 
   const check = useCallback(async () => {
     try {
@@ -34,6 +36,7 @@ export function useReadiness(client: ApiClient, intervalMs = 30_000) {
       // Whether this deployment demands a credential. The server reports it
       // plainly, so the client does not have to discover it by being refused.
       setAuthEnforced(readiness.components.authentication !== 'not_configured');
+      setScoresAreMeaningful(readiness.retrieval_scoring === 'semantic');
     } catch {
       // The indicator's whole job is to survive the failure it reports.
       setConnection('down');
@@ -53,5 +56,5 @@ export function useReadiness(client: ApiClient, intervalMs = 30_000) {
     };
   }, [check, intervalMs]);
 
-  return { connection, authEnforced, refresh: check };
+  return { connection, authEnforced, scoresAreMeaningful, refresh: check };
 }

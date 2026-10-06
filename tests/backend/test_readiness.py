@@ -171,3 +171,41 @@ def test_component_status_values() -> None:
 
 def test_readiness_response_defaults_to_ready() -> None:
     assert ReadinessResponse(database=ComponentStatus.OK).status == "ready"
+
+
+# --------------------------------------------------------------------------
+# Which scale a citation's similarity is on
+#
+# The two embedders are not comparable. A correct retrieval scores ~0.85 under
+# the model and ~0.1 under the hashing embedder, so a client that renders
+# either as "N% match" misreports one of them. The server says which it is
+# rather than leaving the client to guess from the magnitude.
+
+
+@pytest.mark.parametrize(
+    ("provider", "expected"),
+    (("fastembed", "semantic"), ("hashing", "lexical")),
+)
+def test_the_scoring_scale_follows_the_embedder(
+    monkeypatch: pytest.MonkeyPatch, provider: str, expected: str
+) -> None:
+    from app.api.v1 import readiness as module
+
+    monkeypatch.setattr(
+        module,
+        "get_settings",
+        lambda: Settings(
+            database_url="postgresql+asyncpg://localhost/x", embedding_provider=provider
+        ),
+    )
+    assert module.retrieval_scoring() == expected
+
+
+def test_nothing_is_claimed_when_there_is_nothing_to_retrieve(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No database means no retrieval, so no scale to report."""
+    from app.api.v1 import readiness as module
+
+    monkeypatch.setattr(module, "get_settings", lambda: Settings(database_url=None))
+    assert module.retrieval_scoring() is None

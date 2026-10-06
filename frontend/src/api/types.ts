@@ -128,4 +128,12 @@ export interface Readiness {
   status: string;
   database: ComponentStatus;
   components: Record<string, ComponentStatus>;
+  /**
+   * How to read a citation's similarity, or null when nothing is retrieved.
+   *
+   * 'lexical' comes from the offline hashing embedder, where a correct
+   * retrieval routinely scores 0.1 — ranking is right, the number means
+   * nothing on its own, and showing it as a percentage misreports it.
+   */
+  retrieval_scoring?: 'semantic' | 'lexical' | null;
 }

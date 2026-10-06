@@ -189,3 +189,40 @@ describe('what the reader is told about sourcing', () => {
     expect(screen.queryByText(/Unsourced reply/)).not.toBeInTheDocument();
   });
 });
+
+describe('showing a retrieval score only when it means something', () => {
+  const cited = turn({
+    role: 'assistant',
+    citations: [
+      {
+        document_id: 'd1',
+        document_title: 'Shipping',
+        ordinal: 0,
+        excerpt: 'Five days.',
+        similarity: 0.11,
+      },
+    ],
+  });
+
+  it('shows the match when scores come from an embedding model', () => {
+    render(<MessageList turns={[cited]} sending={false} showMatch />);
+    screen.getByText(/Sources/).click();
+    expect(screen.getByText(/11% match/)).toBeInTheDocument();
+  });
+
+  it('hides it under a lexical embedder, where 0.11 is a correct retrieval', () => {
+    // The ranking is right and the number is real, but presented as a
+    // percentage it reads as the product being unsure of a right answer.
+    render(<MessageList turns={[cited]} sending={false} showMatch={false} />);
+    screen.getByText(/Sources/).click();
+    expect(screen.queryByText(/match/)).not.toBeInTheDocument();
+  });
+
+  it('still shows the passage, which is what a reader checks against', () => {
+    render(<MessageList turns={[cited]} sending={false} showMatch={false} />);
+    screen.getByText(/Sources/).click();
+    expect(screen.getByText('Passage 1')).toBeInTheDocument();
+    expect(screen.getByText('Shipping')).toBeInTheDocument();
+    expect(screen.getByText('Five days.')).toBeInTheDocument();
+  });
+});

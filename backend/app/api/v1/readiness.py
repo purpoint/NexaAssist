@@ -20,9 +20,25 @@ from app.observability.diagnostics import (
 )
 from app.db.errors import DatabaseUnavailableError
 from app.schemas.common import ErrorResponse
+from app.core.config import get_settings
 from app.schemas.readiness import ComponentStatus, ReadinessResponse
 
 router = APIRouter(tags=["health"])
+
+
+def retrieval_scoring() -> str | None:
+    """Which scale a citation's similarity is on.
+
+    The hashing embedder is deterministic and offline, and its cosine
+    similarities sit an order of magnitude below a model's: a correct
+    retrieval scores around 0.1. The number is still a real score and still
+    ranks candidates correctly -- it just cannot be read as a confidence, and
+    showing it as "11% match" beside a right answer reads as a broken product.
+    """
+    settings = get_settings()
+    if settings.database_url is None:
+        return None
+    return "lexical" if settings.embedding_provider == "hashing" else "semantic"
 
 
 @router.get(
@@ -50,6 +66,10 @@ async def ready() -> ReadinessResponse:
     # would turn a partial outage into a total one.
     return ReadinessResponse(
         database=database,
+        # Named so a client can tell whether a similarity is worth showing.
+        # The two embedders put scores on scales that are not comparable, and
+        # a UI that renders both as "N% match" misreports one of them.
+        retrieval_scoring=retrieval_scoring(),
         components={
             "database": database,
             "job_queue": await job_queue_status(),

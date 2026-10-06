@@ -27,7 +27,22 @@ function matchPercent(similarity: number): string {
   return `${Math.round(similarity * 100)}%`;
 }
 
-export function Citations({ citations }: { citations: Citation[] }) {
+export function Citations({
+  citations,
+  showMatch = true,
+}: {
+  citations: Citation[];
+  /**
+   * Whether the similarity is worth showing.
+   *
+   * False under the offline hashing embedder, where a correct retrieval
+   * scores around 0.1. Rendering that as "11% match" next to an answer that
+   * is right reads as a broken product, and the honest options are to explain
+   * the scale or to omit it. The passage reference is what a reader actually
+   * checks the claim against; the score was never the point.
+   */
+  showMatch?: boolean;
+}) {
   if (citations.length === 0) return null;
 
   return (
@@ -53,7 +68,11 @@ export function Citations({ citations }: { citations: Citation[] }) {
             <blockquote className="source__excerpt">{citation.excerpt}</blockquote>
             <p className="source__meta">
               <span>Passage {citation.ordinal + 1}</span>
-              <span className="source__match">{matchPercent(citation.similarity)} match</span>
+              {showMatch ? (
+                <span className="source__match">
+                  {matchPercent(citation.similarity)} match
+                </span>
+              ) : null}
             </p>
           </li>
         ))}

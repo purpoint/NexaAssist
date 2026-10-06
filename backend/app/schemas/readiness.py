@@ -2,6 +2,8 @@
 
 from enum import StrEnum
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -37,6 +39,18 @@ class ReadinessResponse(BaseModel):
             "DATABASE_URL is set — which is a deliberate operator choice, not a "
             "fault."
         )
+    )
+    retrieval_scoring: Literal["semantic", "lexical"] | None = Field(
+        default=None,
+        description=(
+            "How to read a citation's similarity. 'semantic' scores come from "
+            "an embedding model and are roughly comparable across questions; "
+            "'lexical' scores come from the offline hashing embedder, where a "
+            "correct retrieval routinely scores 0.1 and the number means "
+            "nothing on its own. Null when no database is configured and "
+            "nothing is retrieved. A client that renders similarity as a "
+            "percentage should not do so for 'lexical'."
+        ),
     )
     components: dict[str, ComponentStatus] = Field(
         default_factory=dict,

@@ -30,7 +30,7 @@ import type { RealtimeState } from './realtime/useRealtime';
 export default function App() {
   const { apiKey, save, clear, configured } = useApiKey();
   const client = useMemo(() => new ApiClient({ apiKey }), [apiKey]);
-  const { connection, authEnforced, refresh } = useReadiness(client);
+  const { connection, authEnforced, scoresAreMeaningful, refresh } = useReadiness(client);
 
   const conversation = useConversation(client);
   const index = useConversationIndex();
@@ -115,6 +115,7 @@ export default function App() {
         onRealtimeState={setRealtime}
         authenticated={configured}
         authEnforced={authEnforced}
+        scoresAreMeaningful={scoresAreMeaningful}
       />
     </Layout>
   );

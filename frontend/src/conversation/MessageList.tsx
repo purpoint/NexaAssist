@@ -32,7 +32,16 @@ function Byline() {
   );
 }
 
-export function MessageList({ turns, sending }: { turns: Turn[]; sending: boolean }) {
+export function MessageList({
+  turns,
+  sending,
+  showMatch = true,
+}: {
+  turns: Turn[];
+  sending: boolean;
+  /** False when retrieval scores are not on a scale worth showing. */
+  showMatch?: boolean;
+}) {
   const end = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -64,7 +73,7 @@ export function MessageList({ turns, sending }: { turns: Turn[]; sending: boolea
                 {turn.streaming ? <span className="caret" aria-hidden="true" /> : null}
               </p>
 
-              <Citations citations={turn.citations} />
+              <Citations citations={turn.citations} showMatch={showMatch} />
 
               {turn.escalated ? <Escalation /> : null}
 

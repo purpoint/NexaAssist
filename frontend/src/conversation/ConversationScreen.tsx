@@ -30,6 +30,7 @@ export function ConversationScreen({
   onRealtimeState,
   authenticated = false,
   authEnforced = null,
+  scoresAreMeaningful = true,
 }: {
   client: ApiClient;
   /** Owned by the root, because the sidebar switches between conversations. */
@@ -53,6 +54,8 @@ export function ConversationScreen({
    * being told, immediately, that this deployment needs a key.
    */
   authEnforced?: boolean | null;
+  /** False under a lexical embedder, whose scores do not read as confidence. */
+  scoresAreMeaningful?: boolean;
 }) {
   useEffect(() => {
     onAuthRequired?.(conversation.authRequired);
@@ -163,7 +166,11 @@ export function ConversationScreen({
               }
             />
           ) : (
-            <MessageList turns={conversation.turns} sending={conversation.sending} />
+            <MessageList
+              turns={conversation.turns}
+              sending={conversation.sending}
+              showMatch={scoresAreMeaningful}
+            />
           )}
 
         </div>
