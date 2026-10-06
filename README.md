@@ -1,232 +1,179 @@
 # NexaAssist
 
-Agentic Customer Support & Workflow Automation Platform.
+**Agentic customer support, built so every answer can be checked.**
 
-**[Live demo](https://nexa-assist-henna.vercel.app)** · [API](https://nexaassist-backend-k0mn.onrender.com/docs) · [Architecture](docs/architecture.md)
+[**Live demo**](https://nexa-assist-henna.vercel.app) · [API docs](https://nexaassist-backend-k0mn.onrender.com/docs) · [Architecture](docs/architecture.md)
 
-> The demo runs on a free tier, so the first request after a quiet period takes
-> about 20 seconds to wake the backend. It is protected by an API key — ask if
-> you would like one, or run it locally with `docker compose up` in under a
-> minute.
+NexaAssist takes an inbound customer message, works out what it is, and either
+answers it from a knowledge base it can cite, hands it to a person, or declines
+— and records enough about the decision that you can explain it afterwards.
 
-NexaAssist takes an inbound customer request, decides what it is, answers it
-from a knowledge base it can cite, or drives it through a defined workflow —
-and records enough about what it did that you can tell afterwards why.
+The distinguishing constraint is that none of that is a black box. Every answer
+carries its sources. Every escalation happened because a stated rule fired. A
+support system that cannot say *why* it said something is one nobody can be
+accountable for.
 
-It runs without any of its infrastructure. With no database, no Redis and no
-provider key it still starts, serves, and reports precisely which components
-are unconfigured; every external dependency has a deterministic in-process
-counterpart, which is what lets the test suite run offline and a new checkout
-run at all. See [`docs/overview.md`](docs/overview.md) for what it does and
-[`docs/architecture.md`](docs/architecture.md) for how.
+> The demo runs on a free tier: the first request after a quiet period takes
+> about 20 seconds to wake the backend, and it is protected by an API key. To
+> run it yourself, `docker compose up` gets the whole stack in about a minute.
 
-## API
+---
 
-Routes are versioned: version 1 is served under `/api/v1`. The pre-v1
-`/api/health` alias has been removed — see
-[`docs/architecture.md`](docs/architecture.md#api-versioning).
+## What it does
 
-| Endpoint | Purpose |
-| --- | --- |
-| `GET /health` · `GET /ready` | Liveness, and readiness with a per-component breakdown. |
-| `POST /assistant/messages` | The main entry point: a customer message in, a grounded answer out. |
-| `POST /intent/analyze` | Classify a message without answering it. |
-| `POST /documents` · `GET /documents` | Ingest and list knowledge-base documents. |
-| `POST /documents/answer` | Answer strictly from retrieved documents, with citations. |
-| `POST /conversations` · `GET /conversations/{conversation_id}` | Multi-turn sessions and their history. |
-| `POST /tickets` · `GET /tickets` | The support-ticket domain. |
-| `POST /ws/ticket` → `WS /ws` | Exchange an API key for a short-lived ticket, then stream over a socket. |
+Ask *"How long does standard shipping take?"* and you get the answer **from your
+document**, with the passage it came from:
 
-Interactive docs are at `/docs`; the schema is at `/openapi.json`.
+```
+NexaAssist
+Standard shipping takes 3 to 5 business days within the country
+and 7 to 14 business days internationally.
 
-## Repository layout
-
-| Path | Contents |
-| --- | --- |
-| `backend/` | FastAPI service — agent loop, retrieval, policy, realtime, observability. |
-| `frontend/` | React + TypeScript client. Tests sit beside the components they cover. |
-| `tests/` | Backend suite. `db/`, `redis/` and `docker/` need real infrastructure and skip without it. |
-| `docs/` | [overview](docs/overview.md) · [architecture](docs/architecture.md) · [API](docs/api.md) · [development](docs/development.md) · [milestones](docs/milestones.md) |
-| `.github/` | Two workflows: the fast suites, and the ones needing PostgreSQL, Redis and a built stack. |
-| `scripts/` | `scan-secrets.sh`, run in CI before every push. |
-
-## Running in a container
-
-The backend ships a two-stage image. It is built from the `backend/` directory,
-so the repository root — and the git-ignored `.env` beside it — is not in the
-build context at all.
-
-```bash
-docker build -f backend/Dockerfile -t nexaassist-backend backend
+▾ Sources  1                        Grounded in your knowledge base
+  📄 Shipping and delivery
+  │ Standard shipping takes 3 to 5 business days within the country
+  │ and 7 to 14 business days internationally. Express shipping…
+  Passage 1
 ```
 
-Configuration is passed at run time, never baked in:
+Ask *"I want a refund for my order"* and policy stops the assistant resolving it
+alone:
 
-```bash
-docker run --rm -p 8000:8000 --env-file .env nexaassist-backend
+```
+NexaAssist
+I have passed this to a support agent, who will confirm the details with you.
+
+● Human support requested
+  This conversation has been handed to a support agent for review.
 ```
 
-The image runs as a non-root user, installs from `backend/requirements.lock`
-so two builds install the same versions, and **does not migrate the database on
-startup**. Applying a migration stays an explicit action against a database you
-chose:
+Ask something the documents do not cover and it declines rather than inventing
+an answer.
 
-```bash
-cd backend && alembic upgrade head
+---
+
+## How it works
+
+```
+message
+   │
+   ├─ classify ─────────  six intents, with a confidence floor below which
+   │                      nothing is dispatched on a guess
+   │
+   ├─ route ────────────  documented questions → knowledge base (pgvector)
+   │                      account-specific ones → bounded agent loop
+   │                      billing → documents first, agent for what they miss
+   │
+   ├─ answer ───────────  grounded strictly in retrieved passages; citations
+   │                      are rebuilt from retrieval, never taken from the model
+   │
+   ├─ policy ───────────  deterministic rules decide escalation and refusal —
+   │                      not the model's opinion of its own confidence
+   │
+   └─ record ───────────  trace, token cost, review item, conversation turn
 ```
 
-### The whole stack
+Answers reach the client over HTTP or a WebSocket. Both run the **same
+pipeline**, so a streamed answer is as grounded as a fetched one.
 
-`compose.yaml` brings up the backend, the client, PostgreSQL (with pgvector)
-and Redis together. The database password is a required variable with no
-default — the stack refuses to start rather than run on a password that is also
-in this repository:
+---
+
+## Engineering decisions worth the words
+
+**Every external dependency has a deterministic in-process twin.** No database,
+no Redis, no provider key — the service still starts, serves, and reports
+precisely which components are unconfigured. That is why the test suite runs
+offline and a fresh clone runs at all.
+
+**Citations are stored as snapshots, not foreign keys.** A citation is a claim
+about what one answer was based on at one moment. Resolving a reference later
+would show whatever the document says *now* and attribute it to an answer that
+predates the edit. Provenance that changes under you is not provenance.
+
+**Nothing migrates on boot.** Not at startup, not in the container, not on
+`docker compose up`. Applying a migration is a decision about a database
+somebody chose; a container that migrates on start makes that decision for them,
+once per replica.
+
+**You cannot stream a policy-checked answer token by token.** Policy can replace
+a reply outright, so the pipeline completes before the first delta is sent. The
+cost is time to first token; the alternative is a client watching an answer
+retract itself.
+
+**Errors report where a request was wrong, never what it contained.** A
+malformed body carrying a customer's message — card number and all — comes back
+as field paths only.
+
+---
+
+## Running it
 
 ```bash
 NEXA_DB_PASSWORD=choose-anything-local docker compose up --build
 ```
 
-The client is then on <http://127.0.0.1:15173> and the API on
-<http://127.0.0.1:18000>. PostgreSQL and Redis publish no ports: they exist for
-the backend, which reaches them over the compose network. That is deliberate —
-a published 5432 would sit next to whatever PostgreSQL you already run, and
-getting that wrong means writing to the wrong database. To get a shell on one:
+Client on <http://127.0.0.1:15173>, API on <http://127.0.0.1:18000>. PostgreSQL
+and Redis publish no ports — they exist for the backend, and a stray published
+5432 beside the one you already run is how you write to the wrong database.
 
-```bash
-docker compose exec db psql -U nexa -d nexaassist
-```
-
-Migrations never run on their own. The `migrate` service sits behind a profile,
-so `up` cannot start it and nothing waits on it:
+Migrations are explicit:
 
 ```bash
 NEXA_DB_PASSWORD=... docker compose --profile migrate run --rm migrate
 ```
 
-If a `.env` exists it is passed to the backend at run time — so the stack uses
-whichever `LLM_PROVIDER` it names, and `groq` means real, billable calls. Set
-`LLM_PROVIDER=static` for a stack that answers deterministically and calls
-nothing.
+Without Docker, see [docs/development.md](docs/development.md).
 
-Two notes on secrets. `docker compose config` resolves `.env` and prints its
-values, including the provider key — do not paste its output anywhere. And the
-client's API URL is inlined by Vite at build time, so it is a build argument
-(`VITE_API_BASE_URL`), which means it is visible in the image's history: it is a
-URL, and nothing secret belongs there.
+---
 
-### What keeps the images honest
-
-Both build contexts carry a `.dockerignore` that excludes `.env` and every
-variant of it. The Dockerfiles copy by name, so nothing depends on that today —
-it is the second defence for the day someone writes `COPY . .`, and two things
-must then go wrong before a key reaches an image.
-
-`tests/backend/test_container_build.py` and `test_compose_stack.py` read the
-Dockerfiles and `compose.yaml` as text, so they run anywhere. The smoke tests in
-`tests/backend/docker/` build the images and look inside them — no `.env` in the
-filesystem, no credential in the layer history or the served bundle, no compiler
-or test runner in the runtime image, and a container that starts and answers
-with nothing configured at all. They skip themselves when no Docker daemon is
-reachable, so the suite still passes without one.
-
-## Prerequisites
-
-Only the first is required. Everything below it is optional, and the service
-tells you at `/ready` which of them it is running without.
-
-- **Python 3.11+** — the floor the project is tested against; the image runs 3.12.
-- **Node.js 20+** — for the client.
-- **PostgreSQL 15 with pgvector** — persistence and retrieval. Without it the
-  API serves, and anything that needs to store or retrieve returns a clear
-  `database_not_configured` rather than failing obscurely.
-- **Redis 7** — the durable job queue, the shared rate limiter, and realtime
-  tickets. Each falls back to an in-process implementation, correct for one
-  worker and wrong for several.
-- **A Groq API key** — for real model calls. `LLM_PROVIDER=static` answers
-  deterministically and calls nothing, which is what the tests use.
-- **Docker** — only for the container workflow above.
-
-## Getting started
-
-### 1. Configure environment
+## Tests
 
 ```bash
-cp .env.example .env
+pytest                                    # 1518 backend
+cd frontend && npm run test               # 202 frontend
 ```
 
-The defaults run the service locally with no infrastructure at all. `.env` is
-git-ignored and is the only place a real credential belongs — `.env.example`
-names every variable and carries none of the values, and a test fails if a new
-setting is added without being documented there.
+Passes on a fresh clone with no infrastructure and no credentials. Tests needing
+PostgreSQL, Redis or Docker skip themselves rather than fail. The suite blocks
+outbound connections, so no test can reach a real provider — a guard that has
+twice caught code trying to.
 
-### 2. Backend
-
-```bash
-python3 -m venv .venv && source .venv/bin/activate && pip install -r backend/requirements-dev.txt
-```
-
-Run the API from the repository root:
-
-```bash
-uvicorn app.main:app --reload --app-dir backend
-```
-
-`/ready` reports what it found:
-
-```bash
-curl http://127.0.0.1:8000/api/v1/ready
-```
-
-### 3. Database (optional)
-
-Migrations are never applied automatically — not at startup, not by the
-container, not by `docker compose up`. Applying one is a decision about a
-database you chose:
-
-```bash
-createdb nexaassist && cd backend && alembic upgrade head
-```
-
-Set `DATABASE_URL` in `.env` to point at it. `alembic` owns the schema
-outright; nothing in the application creates a table.
-
-### 4. Tests
-
-```bash
-pytest
-```
-
-Everything that needs infrastructure skips itself when that infrastructure is
-absent, so this passes on a fresh clone with nothing installed. To run those
-too, make PostgreSQL and Redis reachable and create the one database the suite
-is allowed to touch:
+To run the gated ones:
 
 ```bash
 createdb nexaassist_test && pytest
 ```
 
-The suite blocks outbound network connections, so no test can reach a real
-provider. Docker-backed tests build the images and skip when no daemon is
-running.
+---
 
-### 5. Frontend
+## Repository layout
 
-```bash
-cd frontend && npm ci && npm run dev
-```
+| Path | Contents |
+| --- | --- |
+| `backend/` | FastAPI service — agent loop, retrieval, policy, realtime, observability |
+| `frontend/` | React + TypeScript client; tests sit beside the components they cover |
+| `tests/` | Backend suite. `db/`, `redis/`, `docker/` need real infrastructure |
+| `docs/` | [overview](docs/overview.md) · [architecture](docs/architecture.md) · [API](docs/api.md) · [development](docs/development.md) · [milestones](docs/milestones.md) |
+| `.github/` | Fast suites on every push; a second workflow for PostgreSQL, Redis and a built stack |
+| `scripts/` | `scan-secrets.sh`, run in CI before every push |
 
-The client is served at <http://127.0.0.1:5173> and expects the API at
-`VITE_API_BASE_URL`. Run `npm run test` for its suite and `npm run typecheck`
-for types.
+---
 
-## Conventions
+## Stack
 
-- Configuration comes from environment variables only — never hardcoded, never
-  committed. Every new variable must be added to `.env.example` with a comment,
-  and a test enforces it.
-- Documentation in `docs/` is updated in the same change as the code it
-  describes.
-- Each milestone in `docs/milestones.md` lands as its own focused change set.
-- Every external dependency has a deterministic in-process counterpart, and
-  the protocol is what the application depends on — not the implementation.
-- Nothing creates or migrates a schema except Alembic, run deliberately.
+Python 3.11+ · FastAPI · SQLAlchemy 2.0 (async) · PostgreSQL 15+ with pgvector ·
+Alembic · Redis · Groq · fastembed · React 18 · TypeScript · Vite · Docker ·
+GitHub Actions
+
+Deployed on Vercel (client), Render (API) and Neon (PostgreSQL).
+
+---
+
+## Known limitations
+
+- The free-tier instance runs the **lexical** embedder, which ranks correctly but
+  needs shared vocabulary between question and document. Semantic retrieval needs
+  more memory than 512 MB allows.
+- **Not multi-tenant.** Authorization scopes resources to a subject, which is not
+  the same thing.
+- **Not a ticketing system of record.** It models tickets to act on them.

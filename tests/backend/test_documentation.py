@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[2]
 README = ROOT / "README.md"
 OVERVIEW = ROOT / "docs" / "overview.md"
 ENV_EXAMPLE = ROOT / ".env.example"
+API_REFERENCE = ROOT / "docs" / "api.md"
 
 # Settings fields with a deliberate reason not to appear under their own name.
 DOCUMENTED_ELSEWHERE = {
@@ -79,14 +80,22 @@ def test_the_example_carries_no_values_for_the_secrets(
 
 
 def documented_endpoints() -> list[tuple[str, str]]:
-    """(method, path) pairs from the README's endpoint table."""
+    """(method, path) pairs from the API reference.
+
+    Read from docs/api.md rather than the README. The README is the front
+    door and should say what the product is; an endpoint-by-endpoint list
+    belongs in the reference, and duplicating it in two places is how the two
+    end up disagreeing.
+    """
     return [
         (method, path)
-        for method, path in re.findall(r"`(GET|POST) (/[a-z0-9{}/_-]+)`", README.read_text())
+        for method, path in re.findall(
+            r"`(GET|POST) (/[a-z0-9{}/_-]+)`", API_REFERENCE.read_text()
+        )
     ]
 
 
-def test_the_readme_documents_some_endpoints() -> None:
+def test_the_api_reference_lists_some_endpoints() -> None:
     """Otherwise the check below passes by describing nothing."""
     assert len(documented_endpoints()) >= 8
 
@@ -99,7 +108,7 @@ def test_every_documented_endpoint_exists(schema: dict) -> None:
 
 
 def test_the_documented_prefix_is_the_served_one(schema: dict) -> None:
-    assert "/api/v1" in README.read_text()
+    assert "/api/v1" in API_REFERENCE.read_text()
     assert all(path.startswith("/api/v1") for path in schema["paths"])
 
 
@@ -136,7 +145,6 @@ def test_the_overview_marks_capabilities_it_actually_has() -> None:
 # The architecture and API documents describe what exists
 
 ARCHITECTURE = ROOT / "docs" / "architecture.md"
-API_REFERENCE = ROOT / "docs" / "api.md"
 
 
 def test_the_architecture_diagram_lists_the_served_routes(schema: dict) -> None:
