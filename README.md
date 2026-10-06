@@ -46,7 +46,7 @@ Interactive docs are at `/docs`; the schema is at `/openapi.json`.
 | `backend/` | FastAPI service — agent loop, retrieval, policy, realtime, observability. |
 | `frontend/` | React + TypeScript client. Tests sit beside the components they cover. |
 | `tests/` | Backend suite. `db/`, `redis/` and `docker/` need real infrastructure and skip without it. |
-| `docs/` | [overview](docs/overview.md) · [architecture](docs/architecture.md) · [API](docs/api.md) · [development](docs/development.md) · [LLM prompts](docs/llm-prompts.md) · [milestones](docs/milestones.md) |
+| `docs/` | [overview](docs/overview.md) · [architecture](docs/architecture.md) · [API](docs/api.md) · [development](docs/development.md) · [milestones](docs/milestones.md) |
 | `.github/` | Two workflows: the fast suites, and the ones needing PostgreSQL, Redis and a built stack. |
 | `scripts/` | `scan-secrets.sh`, run in CI before every push. |
 

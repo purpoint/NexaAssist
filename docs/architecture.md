@@ -277,8 +277,9 @@ The category set is closed (`billing`, `technical_support`, `account`,
 lookup rather than fuzzy matching. `other` is mandatory: without an escape
 hatch the model is forced to miscategorise.
 
-`confidence` is the model's self-report, **not** a calibrated probability --
-see `docs/llm-prompts.md`.
+`confidence` is the model's self-report, **not** a calibrated probability: 0.94
+means the model asserted high confidence, not that it is right 94% of the time.
+The prompts themselves live as versioned constants in `app/llm/prompts.py`.
 
 Nothing here decides what the business should *do* with a classification.
 Urgency, escalation, prioritisation, and human review belong to M10 and M11,

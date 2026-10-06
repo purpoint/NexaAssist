@@ -1,7 +1,7 @@
 """Prompt text, versioned in the repository.
 
 Every prompt is a named constant here, paired with a version string, and
-mirrored into ``docs/llm-prompts.md``. Prompts are product surface, so they are
+the single source of truth for them. Prompts are product surface, so they are
 reviewed as code rather than buried in an f-string at a call site.
 
 Prompts describe a task; they do not encode business policy. Escalation,
