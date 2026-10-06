@@ -164,7 +164,7 @@ class Settings(BaseSettings):
 
     # Below this self-reported confidence a classification is treated as
     # ambiguous and sent to the fallback instead of a specialised handler.
-    # Self-reported, not calibrated -- see docs/prompt.md -- so this is a
+    # Self-reported, not calibrated -- see docs/llm-prompts.md -- so this is a
     # coarse guard, not a probability threshold.
     routing_min_confidence: float = Field(default=0.5, ge=0.0, le=1.0)
     llm_temperature: float | None = Field(default=None, ge=0.0, le=1.0)

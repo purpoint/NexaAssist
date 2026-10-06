@@ -1,4 +1,9 @@
-# Prompt Design
+# LLM Prompt Contracts
+
+The prompts NexaAssist sends to the language model: the intent
+classifier, the grounded answerer, and the realtime reply. Not notes about
+building this project -- the product's own model inputs, versioned and
+reviewed like code.
 
 Prompts are product surface, not incidental strings. They live as named
 constants in `backend/app/llm/prompts.py`, are reviewed like code, and are

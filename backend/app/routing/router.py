@@ -9,7 +9,7 @@ distinguishable in the logs:
 * the category has no registered handler.
 
 Confidence is the model's own self-report, not a calibrated probability (see
-``docs/prompt.md``). The threshold is therefore a coarse guard against acting
+``docs/llm-prompts.md``). The threshold is therefore a coarse guard against acting
 on a guess, not a statistical decision.
 """
 

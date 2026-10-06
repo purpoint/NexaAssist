@@ -144,7 +144,7 @@ def test_prompt_text_matches_its_pinned_version() -> None:
     assert drifted == [], (
         f"Prompt text changed without a version bump: {drifted}. "
         "Bump the version in app/llm/prompts.py, mirror the change into "
-        "docs/prompt.md, and repin the digest here in the same commit."
+        "docs/llm-prompts.md, and repin the digest here in the same commit."
     )
 
 

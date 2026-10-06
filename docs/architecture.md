@@ -278,7 +278,7 @@ lookup rather than fuzzy matching. `other` is mandatory: without an escape
 hatch the model is forced to miscategorise.
 
 `confidence` is the model's self-report, **not** a calibrated probability --
-see `docs/prompt.md`.
+see `docs/llm-prompts.md`.
 
 Nothing here decides what the business should *do* with a classification.
 Urgency, escalation, prioritisation, and human review belong to M10 and M11,

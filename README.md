@@ -2,6 +2,13 @@
 
 Agentic Customer Support & Workflow Automation Platform.
 
+**[Live demo](https://nexa-assist-henna.vercel.app)** · [API](https://nexaassist-backend-k0mn.onrender.com/docs) · [Architecture](docs/architecture.md)
+
+> The demo runs on a free tier, so the first request after a quiet period takes
+> about 20 seconds to wake the backend. It is protected by an API key — ask if
+> you would like one, or run it locally with `docker compose up` in under a
+> minute.
+
 NexaAssist takes an inbound customer request, decides what it is, answers it
 from a knowledge base it can cite, or drives it through a defined workflow —
 and records enough about what it did that you can tell afterwards why.
@@ -36,10 +43,12 @@ Interactive docs are at `/docs`; the schema is at `/openapi.json`.
 
 | Path | Contents |
 | --- | --- |
-| `docs/` | Design documents: overview, architecture, tech stack, prompt design, milestones. |
-| `backend/` | Python + FastAPI service. |
-| `frontend/` | React + TypeScript client. |
-| `tests/` | Test suite, split by target (`backend/`, `frontend/`). |
+| `backend/` | FastAPI service — agent loop, retrieval, policy, realtime, observability. |
+| `frontend/` | React + TypeScript client. Tests sit beside the components they cover. |
+| `tests/` | Backend suite. `db/`, `redis/` and `docker/` need real infrastructure and skip without it. |
+| `docs/` | [overview](docs/overview.md) · [architecture](docs/architecture.md) · [API](docs/api.md) · [development](docs/development.md) · [LLM prompts](docs/llm-prompts.md) · [milestones](docs/milestones.md) |
+| `.github/` | Two workflows: the fast suites, and the ones needing PostgreSQL, Redis and a built stack. |
+| `scripts/` | `scan-secrets.sh`, run in CI before every push. |
 
 ## Running in a container
 
